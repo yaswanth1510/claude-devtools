@@ -34,6 +34,21 @@ export class HttpServer {
     sshModeSwitchCallback: (mode: 'local' | 'ssh') => Promise<void>,
     preferredPort: number = 3456
   ): Promise<number> {
+    try {
+      return await this.startInternal(services, sshModeSwitchCallback, preferredPort);
+    } catch (error) {
+      // Leave no half-started Fastify instance behind, so a later start() attempt
+      // begins from a clean state.
+      await this.discardApp();
+      throw error;
+    }
+  }
+
+  private async startInternal(
+    services: HttpServices,
+    sshModeSwitchCallback: (mode: 'local' | 'ssh') => Promise<void>,
+    preferredPort: number
+  ): Promise<number> {
     this.app = Fastify({ logger: false });
 
     // Register CORS - allow all localhost origins
@@ -104,6 +119,23 @@ export class HttpServer {
     }
 
     throw new Error(`Could not find available port (tried ${preferredPort}-${preferredPort + 10})`);
+  }
+
+  /**
+   * Closes and clears the current Fastify instance, ignoring close failures.
+   */
+  private async discardApp(): Promise<void> {
+    const app = this.app;
+    this.app = null;
+    this.running = false;
+    if (!app) {
+      return;
+    }
+    try {
+      await app.close();
+    } catch (closeError) {
+      logger.error('Failed to close HTTP server after a failed start:', closeError);
+    }
   }
 
   /**

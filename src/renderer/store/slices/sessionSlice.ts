@@ -270,8 +270,12 @@ export const createSessionSlice: StateCreator<AppState, [], [], SessionSlice> = 
         await api.config.pinSession(projectId, sessionId);
       }
     } catch (error) {
-      // Rollback on failure
-      set({ pinnedSessionIds: previousPinnedIds });
+      // Rollback on failure and surface it: the pin was not persisted, so the
+      // UI must not silently revert without explanation.
+      set({
+        pinnedSessionIds: previousPinnedIds,
+        sessionsError: error instanceof Error ? error.message : 'Failed to update pinned sessions',
+      });
       logger.error('togglePinSession error:', error);
     }
   },

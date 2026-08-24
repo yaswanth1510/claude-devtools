@@ -6,6 +6,9 @@
  * to run in a regular browser connected to an HTTP server.
  */
 
+import { wrapError } from '@shared/utils/errorHandling';
+import { createLogger } from '@shared/utils/logger';
+
 import type {
   AppConfig,
   ClaudeMdFileInfo,
@@ -39,6 +42,8 @@ import type {
   WaterfallData,
 } from '@shared/types';
 
+const logger = createLogger('API:httpClient');
+
 export class HttpAPIClient implements ElectronAPI {
   private baseUrl: string;
   private eventSource: EventSource | null = null;
@@ -69,9 +74,22 @@ export class HttpAPIClient implements ElectronAPI {
       this.eventListeners.set(channel, new Set());
       // Register SSE listener for this channel once
       this.eventSource?.addEventListener(channel, ((event: MessageEvent) => {
-        const data: unknown = JSON.parse(event.data as string);
+        let data: unknown;
+        try {
+          data = JSON.parse(event.data as string);
+        } catch (error) {
+          logger.error(`Discarding malformed SSE payload on channel "${channel}":`, error);
+          return;
+        }
         const listeners = this.eventListeners.get(channel);
-        listeners?.forEach((cb) => cb(data));
+        // One failing listener must not prevent the others from running.
+        listeners?.forEach((cb) => {
+          try {
+            cb(data);
+          } catch (error) {
+            logger.error(`SSE listener for channel "${channel}" threw:`, error);
+          }
+        });
       }) as EventListener);
     }
     this.eventListeners.get(channel)!.add(callback);
@@ -102,13 +120,38 @@ export class HttpAPIClient implements ElectronAPI {
     return value;
   }
 
+  /**
+   * Extracts the server-provided error message from a failed response body.
+   * Falls back to the status line when the body is not JSON (HTML error pages,
+   * proxy responses, empty bodies) so the HTTP status is never hidden behind a
+   * JSON syntax error.
+   */
+  private static buildHttpError(res: Response, text: string): Error {
+    const statusText = res.statusText ? ` ${res.statusText}` : '';
+    const status = `HTTP ${res.status}${statusText}`;
+    try {
+      const parsed = JSON.parse(text) as { error?: string };
+      if (typeof parsed.error === 'string' && parsed.error.length > 0) {
+        return new Error(parsed.error);
+      }
+    } catch {
+      // Body is not JSON - fall through to the status-based message below.
+    }
+
+    const snippet = text.trim().slice(0, 200);
+    return new Error(snippet.length > 0 ? `${status}: ${snippet}` : status);
+  }
+
   private async parseJson<T>(res: Response): Promise<T> {
     const text = await res.text();
     if (!res.ok) {
-      const parsed = JSON.parse(text) as { error?: string };
-      throw new Error(parsed.error ?? `HTTP ${res.status}`);
+      throw HttpAPIClient.buildHttpError(res, text);
     }
-    return JSON.parse(text, (key, value) => HttpAPIClient.reviveDates(key, value)) as T;
+    try {
+      return JSON.parse(text, (key, value) => HttpAPIClient.reviveDates(key, value)) as T;
+    } catch (error) {
+      throw wrapError(`Invalid JSON response from ${res.url || this.baseUrl}`, error);
+    }
   }
 
   private async get<T>(path: string): Promise<T> {
@@ -168,6 +211,47 @@ export class HttpAPIClient implements ElectronAPI {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  /**
+   * Throws when a route replied with `{ success: false }`.
+   * Browser mode mirrors the Electron preload, which rejects on failed results,
+   * so a failed mutation must not look like a successful one.
+   */
+  private static assertResultOk(result: unknown, fallbackMessage: string): void {
+    if (result && typeof result === 'object' && 'success' in result) {
+      const { success, error } = result as { success?: unknown; error?: unknown };
+      if (success === false) {
+        throw new Error(typeof error === 'string' && error ? error : fallbackMessage);
+      }
+    }
+  }
+
+  /** POST that rejects when the route reports a failed result. */
+  private async postChecked(
+    path: string,
+    body?: unknown,
+    fallbackMessage = `POST ${path} failed`
+  ): Promise<void> {
+    HttpAPIClient.assertResultOk(await this.post<unknown>(path, body), fallbackMessage);
+  }
+
+  /** DELETE that rejects when the route reports a failed result. */
+  private async delChecked(
+    path: string,
+    body?: unknown,
+    fallbackMessage = `DELETE ${path} failed`
+  ): Promise<void> {
+    HttpAPIClient.assertResultOk(await this.del<unknown>(path, body), fallbackMessage);
+  }
+
+  /** PUT that rejects when the route reports a failed result. */
+  private async putChecked(
+    path: string,
+    body?: unknown,
+    fallbackMessage = `PUT ${path} failed`
+  ): Promise<void> {
+    HttpAPIClient.assertResultOk(await this.put<unknown>(path, body), fallbackMessage);
   }
 
   // ---------------------------------------------------------------------------
@@ -355,45 +439,68 @@ export class HttpAPIClient implements ElectronAPI {
       return result.data!;
     },
     addIgnoreRegex: async (pattern: string): Promise<AppConfig> => {
-      await this.post('/api/config/ignore-regex', { pattern });
+      await this.postChecked('/api/config/ignore-regex', { pattern }, 'Failed to add ignore regex');
       return this.config.get();
     },
     removeIgnoreRegex: async (pattern: string): Promise<AppConfig> => {
-      await this.del('/api/config/ignore-regex', { pattern });
+      await this.delChecked(
+        '/api/config/ignore-regex',
+        { pattern },
+        'Failed to remove ignore regex'
+      );
       return this.config.get();
     },
     addIgnoreRepository: async (repositoryId: string): Promise<AppConfig> => {
-      await this.post('/api/config/ignore-repository', { repositoryId });
+      await this.postChecked(
+        '/api/config/ignore-repository',
+        { repositoryId },
+        'Failed to add ignored repository'
+      );
       return this.config.get();
     },
     removeIgnoreRepository: async (repositoryId: string): Promise<AppConfig> => {
-      await this.del('/api/config/ignore-repository', { repositoryId });
+      await this.delChecked(
+        '/api/config/ignore-repository',
+        { repositoryId },
+        'Failed to remove ignored repository'
+      );
       return this.config.get();
     },
     snooze: async (minutes: number): Promise<AppConfig> => {
-      await this.post('/api/config/snooze', { minutes });
+      await this.postChecked('/api/config/snooze', { minutes }, 'Failed to snooze notifications');
       return this.config.get();
     },
     clearSnooze: async (): Promise<AppConfig> => {
-      await this.post('/api/config/clear-snooze');
+      await this.postChecked('/api/config/clear-snooze', undefined, 'Failed to clear snooze');
       return this.config.get();
     },
     addTrigger: async (trigger): Promise<AppConfig> => {
-      await this.post('/api/config/triggers', trigger);
+      await this.postChecked('/api/config/triggers', trigger, 'Failed to add trigger');
       return this.config.get();
     },
     updateTrigger: async (triggerId: string, updates): Promise<AppConfig> => {
-      await this.put(`/api/config/triggers/${encodeURIComponent(triggerId)}`, updates);
+      await this.putChecked(
+        `/api/config/triggers/${encodeURIComponent(triggerId)}`,
+        updates,
+        'Failed to update trigger'
+      );
       return this.config.get();
     },
     removeTrigger: async (triggerId: string): Promise<AppConfig> => {
-      await this.del(`/api/config/triggers/${encodeURIComponent(triggerId)}`);
+      await this.delChecked(
+        `/api/config/triggers/${encodeURIComponent(triggerId)}`,
+        undefined,
+        'Failed to remove trigger'
+      );
       return this.config.get();
     },
     getTriggers: async (): Promise<NotificationTrigger[]> => {
-      const result = await this.get<{ success: boolean; data?: NotificationTrigger[] }>(
-        '/api/config/triggers'
-      );
+      const result = await this.get<{
+        success: boolean;
+        data?: NotificationTrigger[];
+        error?: string;
+      }>('/api/config/triggers');
+      HttpAPIClient.assertResultOk(result, 'Failed to get triggers');
       return result.data ?? [];
     },
     testTrigger: async (trigger: NotificationTrigger): Promise<TriggerTestResult> => {
@@ -413,9 +520,17 @@ export class HttpAPIClient implements ElectronAPI {
       console.warn('[HttpAPIClient] openInEditor is not available in browser mode');
     },
     pinSession: (projectId: string, sessionId: string): Promise<void> =>
-      this.post('/api/config/pin-session', { projectId, sessionId }),
+      this.postChecked(
+        '/api/config/pin-session',
+        { projectId, sessionId },
+        'Failed to pin session'
+      ),
     unpinSession: (projectId: string, sessionId: string): Promise<void> =>
-      this.post('/api/config/unpin-session', { projectId, sessionId }),
+      this.postChecked(
+        '/api/config/unpin-session',
+        { projectId, sessionId },
+        'Failed to unpin session'
+      ),
   };
 
   // ---------------------------------------------------------------------------

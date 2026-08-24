@@ -28,7 +28,10 @@ const getWindowIconPath = (): string | undefined => {
   const isDev = process.env.NODE_ENV === 'development';
   const candidates = isDev
     ? [join(process.cwd(), 'resources/icon.png')]
-    : [join(process.resourcesPath, 'resources/icon.png'), join(__dirname, '../../resources/icon.png')];
+    : [
+        join(process.resourcesPath, 'resources/icon.png'),
+        join(__dirname, '../../resources/icon.png'),
+      ];
 
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
@@ -221,8 +224,13 @@ function initializeServices(): void {
         return { success: true, data: { running: true, port: httpServer.getPort() } };
       }
       await startHttpServer(handleModeSwitch);
-      // Persist the enabled state
-      configManager.updateConfig('httpServer', { enabled: true, port: httpServer.getPort() });
+      // Persist the enabled state. The server is already running, so a failed
+      // write is logged rather than reported as a failed start.
+      try {
+        configManager.updateConfig('httpServer', { enabled: true, port: httpServer.getPort() });
+      } catch (error) {
+        logger.error('HTTP server started but enabled state could not be persisted:', error);
+      }
       return { success: true, data: { running: true, port: httpServer.getPort() } };
     } catch (error) {
       logger.error('Failed to start HTTP server via IPC:', error);
@@ -236,8 +244,13 @@ function initializeServices(): void {
   ipcMain.handle(HTTP_SERVER_STOP, async () => {
     try {
       await httpServer.stop();
-      // Persist the disabled state
-      configManager.updateConfig('httpServer', { enabled: false });
+      // Persist the disabled state. The server is already stopped, so a failed
+      // write is logged rather than reported as a failed stop.
+      try {
+        configManager.updateConfig('httpServer', { enabled: false });
+      } catch (error) {
+        logger.error('HTTP server stopped but disabled state could not be persisted:', error);
+      }
       return { success: true, data: { running: false, port: httpServer.getPort() } };
     } catch (error) {
       logger.error('Failed to stop HTTP server via IPC:', error);

@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { api } from '@renderer/api';
 import { useStore } from '@renderer/store';
+import { createLogger } from '@shared/utils/logger';
 import { Loader2, Monitor, Server, Wifi, WifiOff } from 'lucide-react';
 
 import { SettingRow } from '../components/SettingRow';
@@ -24,6 +25,8 @@ import type {
   SshConnectionConfig,
   SshConnectionProfile,
 } from '@shared/types';
+
+const logger = createLogger('Component:ConnectionSection');
 
 const authMethodOptions: readonly { value: SshAuthMethod; label: string }[] = [
   { value: 'auto', label: 'Auto (from SSH Config)' },
@@ -68,8 +71,8 @@ export const ConnectionSection = (): React.JSX.Element => {
       const config = await api.config.get();
       const loaded = config.ssh;
       setSavedProfiles(loaded?.profiles ?? []);
-    } catch {
-      // ignore
+    } catch (error) {
+      logger.error('Failed to load saved SSH profiles:', error);
     }
   }, []);
 
