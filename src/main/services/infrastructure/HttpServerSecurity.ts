@@ -2,6 +2,16 @@ import { timingSafeEqual } from 'crypto';
 
 const ALLOWED_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1']);
 
+function parsePort(portText: string): number | undefined | null {
+  if (!portText) return undefined;
+  if ([...portText].some((character) => character < '0' || character > '9')) {
+    return null;
+  }
+
+  const port = Number(portText);
+  return Number.isSafeInteger(port) && port <= 65535 ? port : null;
+}
+
 export function isValidHostHeader(hostHeader: string | undefined, boundPort: number): boolean {
   if (hostHeader === undefined) return false;
   if (hostHeader.trim() !== hostHeader || hostHeader.includes('/')) return false;
@@ -10,17 +20,25 @@ export function isValidHostHeader(hostHeader: string | undefined, boundPort: num
   let port: number | undefined;
 
   if (hostHeader.startsWith('[')) {
-    const match = /^\[([^\]]+)\](?::(\d+))?$/.exec(hostHeader);
-    if (!match) return false;
-    hostname = match[1];
-    port = match[2] ? Number(match[2]) : undefined;
+    const closingBracket = hostHeader.indexOf(']');
+    if (closingBracket < 2) return false;
+    hostname = hostHeader.slice(1, closingBracket);
+    const portSuffix = hostHeader.slice(closingBracket + 1);
+    if (portSuffix) {
+      if (!portSuffix.startsWith(':')) return false;
+      const portResult = parsePort(portSuffix.slice(1));
+      if (portResult === null || portResult === undefined) return false;
+      port = portResult;
+    }
   } else if (hostHeader === '::1') {
     hostname = hostHeader;
   } else {
-    const match = /^([^:]+)(?::(\d+))?$/.exec(hostHeader);
-    if (!match) return false;
-    hostname = match[1];
-    port = match[2] ? Number(match[2]) : undefined;
+    const colon = hostHeader.indexOf(':');
+    if (colon >= 0 && hostHeader.slice(colon + 1).includes(':')) return false;
+    hostname = colon >= 0 ? hostHeader.slice(0, colon) : hostHeader;
+    const portResult = parsePort(colon >= 0 ? hostHeader.slice(colon + 1) : '');
+    if (portResult === null) return false;
+    port = portResult;
   }
 
   if (!ALLOWED_HOSTNAMES.has(hostname.toLowerCase())) return false;
