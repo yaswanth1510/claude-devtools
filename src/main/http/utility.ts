@@ -15,7 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { type ClaudeMdFileInfo, readAllClaudeMdFiles, readDirectoryClaudeMd } from '../services';
-import { validateFilePath } from '../utils/pathValidation';
+import { validateDirectoryPath, validateFilePath } from '../utils/pathValidation';
 import { countTokens } from '../utils/tokenizer';
 
 import type { FastifyInstance } from 'fastify';
@@ -39,7 +39,14 @@ export function registerUtilityRoutes(app: FastifyInstance): void {
   app.post<{ Body: { projectRoot: string } }>('/api/read-claude-md', async (request) => {
     try {
       const { projectRoot } = request.body;
-      const result = await readAllClaudeMdFiles(projectRoot);
+      const validation = validateDirectoryPath(projectRoot);
+      if (!validation.valid) {
+        logger.error(
+          `Rejected projectRoot in /api/read-claude-md: ${validation.error ?? 'invalid path'}`
+        );
+        return {};
+      }
+      const result = await readAllClaudeMdFiles(validation.normalizedPath!);
       const files: Record<string, ClaudeMdFileInfo> = {};
       result.files.forEach((info, key) => {
         files[key] = info;
@@ -55,7 +62,19 @@ export function registerUtilityRoutes(app: FastifyInstance): void {
   app.post<{ Body: { dirPath: string } }>('/api/read-directory-claude-md', async (request) => {
     try {
       const { dirPath } = request.body;
-      const info = await readDirectoryClaudeMd(dirPath);
+      const validation = validateDirectoryPath(dirPath);
+      if (!validation.valid) {
+        logger.error(
+          `Rejected dirPath in /api/read-directory-claude-md: ${validation.error ?? 'invalid path'}`
+        );
+        return {
+          path: dirPath,
+          exists: false,
+          charCount: 0,
+          estimatedTokens: 0,
+        };
+      }
+      const info = await readDirectoryClaudeMd(validation.normalizedPath!);
       return info;
     } catch (error) {
       logger.error('Error in POST /api/read-directory-claude-md:', error);

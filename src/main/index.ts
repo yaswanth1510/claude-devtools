@@ -17,18 +17,23 @@ import {
   WINDOW_ZOOM_FACTOR_CHANGED_CHANNEL,
 } from '@shared/constants';
 import { createLogger } from '@shared/utils/logger';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { pathToFileURL } from 'url';
 
 import { initializeIpcHandlers, removeIpcHandlers } from './ipc/handlers';
+import { isAllowedExternalProtocol } from './utils/externalUrl';
 
 // Window icon path for non-mac platforms.
 const getWindowIconPath = (): string | undefined => {
   const isDev = process.env.NODE_ENV === 'development';
   const candidates = isDev
     ? [join(process.cwd(), 'resources/icon.png')]
-    : [join(process.resourcesPath, 'resources/icon.png'), join(__dirname, '../../resources/icon.png')];
+    : [
+        join(process.resourcesPath, 'resources/icon.png'),
+        join(__dirname, '../../resources/icon.png'),
+      ];
 
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
@@ -218,12 +223,18 @@ function initializeServices(): void {
   ipcMain.handle(HTTP_SERVER_START, async () => {
     try {
       if (httpServer.isRunning()) {
-        return { success: true, data: { running: true, port: httpServer.getPort() } };
+        return {
+          success: true,
+          data: { running: true, port: httpServer.getPort(), token: httpServer.getToken() },
+        };
       }
       await startHttpServer(handleModeSwitch);
       // Persist the enabled state
       configManager.updateConfig('httpServer', { enabled: true, port: httpServer.getPort() });
-      return { success: true, data: { running: true, port: httpServer.getPort() } };
+      return {
+        success: true,
+        data: { running: true, port: httpServer.getPort(), token: httpServer.getToken() },
+      };
     } catch (error) {
       logger.error('Failed to start HTTP server via IPC:', error);
       return {
@@ -238,7 +249,10 @@ function initializeServices(): void {
       await httpServer.stop();
       // Persist the disabled state
       configManager.updateConfig('httpServer', { enabled: false });
-      return { success: true, data: { running: false, port: httpServer.getPort() } };
+      return {
+        success: true,
+        data: { running: false, port: httpServer.getPort(), token: httpServer.getToken() },
+      };
     } catch (error) {
       logger.error('Failed to stop HTTP server via IPC:', error);
       return {
@@ -249,7 +263,11 @@ function initializeServices(): void {
   });
 
   ipcMain.handle(HTTP_SERVER_GET_STATUS, () => {
-    return { running: httpServer.isRunning(), port: httpServer.getPort() };
+    return {
+      running: httpServer.isRunning(),
+      port: httpServer.getPort(),
+      token: httpServer.getToken(),
+    };
   });
 
   // Forward SSH state changes to renderer and HTTP SSE clients
@@ -377,6 +395,37 @@ function createWindow(): void {
     titleBarStyle: 'hidden',
     ...(isMac && { trafficLightPosition: getTrafficLightPositionForZoom(1) }),
     title: 'claude-devtools',
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsedUrl = new URL(url);
+      if (isAllowedExternalProtocol(parsedUrl.protocol)) {
+        void shell.openExternal(parsedUrl.toString()).catch((error: unknown) => {
+          logger.error('Failed to open external URL:', error);
+        });
+      }
+    } catch (error) {
+      logger.error('Rejected invalid external URL:', error);
+    }
+    return { action: 'deny' };
+  });
+
+  const rendererEntryUrl =
+    process.env.NODE_ENV === 'development'
+      ? new URL(`http://localhost:${DEV_SERVER_PORT}`)
+      : pathToFileURL(getRendererIndexPath());
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    try {
+      const targetUrl = new URL(url);
+      const allowed =
+        process.env.NODE_ENV === 'development'
+          ? targetUrl.origin === rendererEntryUrl.origin
+          : targetUrl.protocol === 'file:' && targetUrl.pathname === rendererEntryUrl.pathname;
+      if (!allowed) event.preventDefault();
+    } catch {
+      event.preventDefault();
+    }
   });
 
   // Load the renderer

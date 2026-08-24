@@ -17,6 +17,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { Client, type ConnectConfig, type SFTPWrapper } from 'ssh2';
 
+import { KnownHostsVerifier } from './KnownHostsVerifier';
 import { LocalFileSystemProvider } from './LocalFileSystemProvider';
 import { SshConfigParser } from './SshConfigParser';
 import { SshFileSystemProvider } from './SshFileSystemProvider';
@@ -131,11 +132,14 @@ export class SshConnectionManager extends EventEmitter {
     this.setState('connecting');
     this.connectedHost = config.host;
 
+    const hostKeyState: { error?: string } = {};
     try {
       const client = new Client();
       this.client = client;
 
-      const connectConfig = await this.buildConnectConfig(config);
+      const connectConfig = await this.buildConnectConfig(config, (error) => {
+        hostKeyState.error = error;
+      });
 
       await new Promise<void>((resolve, reject) => {
         client.on('ready', () => resolve());
@@ -180,12 +184,12 @@ export class SshConnectionManager extends EventEmitter {
       this.setState('connected');
       logger.info(`SSH connected to ${config.host}:${config.port}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = hostKeyState.error ?? (err instanceof Error ? err.message : String(err));
       logger.error(`SSH connection failed: ${message}`);
       this.lastError = message;
       this.setState('error');
       this.cleanup();
-      throw err;
+      throw hostKeyState.error ? new Error(message) : err;
     }
   }
 
@@ -194,9 +198,12 @@ export class SshConnectionManager extends EventEmitter {
    */
   async testConnection(config: SshConnectionConfig): Promise<{ success: boolean; error?: string }> {
     const testClient = new Client();
+    const hostKeyState: { error?: string } = {};
 
     try {
-      const connectConfig = await this.buildConnectConfig(config);
+      const connectConfig = await this.buildConnectConfig(config, (error) => {
+        hostKeyState.error = error;
+      });
 
       await new Promise<void>((resolve, reject) => {
         testClient.on('ready', () => resolve());
@@ -219,7 +226,7 @@ export class SshConnectionManager extends EventEmitter {
       return { success: true };
     } catch (err) {
       testClient.end();
-      const message = err instanceof Error ? err.message : String(err);
+      const message = hostKeyState.error ?? (err instanceof Error ? err.message : String(err));
       return { success: false, error: message };
     }
   }
@@ -250,15 +257,32 @@ export class SshConnectionManager extends EventEmitter {
   // Private Methods
   // ===========================================================================
 
-  private async buildConnectConfig(config: SshConnectionConfig): Promise<ConnectConfig> {
+  private async buildConnectConfig(
+    config: SshConnectionConfig,
+    onHostKeyError: (error: string) => void
+  ): Promise<ConnectConfig> {
     // Resolve SSH config for the given host (alias or hostname)
     const sshConfig = await this.configParser.resolveHost(config.host);
 
+    const effectiveHost = sshConfig?.hostName ?? config.host;
+    const effectivePort = config.port !== 22 ? config.port : (sshConfig?.port ?? config.port);
+    const knownHostsVerifier = new KnownHostsVerifier();
+    await knownHostsVerifier.load();
+
     const connectConfig: ConnectConfig = {
-      host: sshConfig?.hostName ?? config.host,
-      port: config.port !== 22 ? config.port : (sshConfig?.port ?? config.port),
+      host: effectiveHost,
+      port: effectivePort,
       username: config.username || sshConfig?.user || os.userInfo().username,
       readyTimeout: 10000,
+      hostVerifier: (key: Buffer) => {
+        try {
+          knownHostsVerifier.verify(effectiveHost, effectivePort, key);
+          return true;
+        } catch (error) {
+          onHostKeyError(error instanceof Error ? error.message : String(error));
+          return false;
+        }
+      },
     };
 
     switch (config.authMethod) {

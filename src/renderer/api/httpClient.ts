@@ -41,12 +41,14 @@ import type {
 
 export class HttpAPIClient implements ElectronAPI {
   private baseUrl: string;
+  private token: string | undefined;
   private eventSource: EventSource | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- event callbacks have varying signatures
   private eventListeners = new Map<string, Set<(...args: any[]) => void>>();
 
-  constructor(port: number) {
+  constructor(port: number, token?: string) {
     this.baseUrl = `http://127.0.0.1:${port}`;
+    this.token = token ?? new URLSearchParams(window.location.search).get('token') ?? undefined;
     this.initEventSource();
   }
 
@@ -55,7 +57,9 @@ export class HttpAPIClient implements ElectronAPI {
   // ---------------------------------------------------------------------------
 
   private initEventSource(): void {
-    this.eventSource = new EventSource(`${this.baseUrl}/api/events`);
+    const eventsUrl = new URL(`${this.baseUrl}/api/events`);
+    if (this.token) eventsUrl.searchParams.set('token', this.token);
+    this.eventSource = new EventSource(eventsUrl.toString());
     this.eventSource.onopen = () => console.log('[HttpAPIClient] SSE connected');
     this.eventSource.onerror = () => {
       // Auto-reconnect is built into EventSource
@@ -115,7 +119,10 @@ export class HttpAPIClient implements ElectronAPI {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     try {
-      const res = await fetch(`${this.baseUrl}${path}`, { signal: controller.signal });
+      const res = await fetch(`${this.baseUrl}${path}`, {
+        headers: this.getAuthHeaders(),
+        signal: controller.signal,
+      });
       return this.parseJson<T>(res);
     } finally {
       clearTimeout(timeout);
@@ -128,7 +135,7 @@ export class HttpAPIClient implements ElectronAPI {
     try {
       const res = await fetch(`${this.baseUrl}${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...this.getAuthHeaders(), 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
@@ -144,7 +151,7 @@ export class HttpAPIClient implements ElectronAPI {
     try {
       const res = await fetch(`${this.baseUrl}${path}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...this.getAuthHeaders(), 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
@@ -160,7 +167,7 @@ export class HttpAPIClient implements ElectronAPI {
     try {
       const res = await fetch(`${this.baseUrl}${path}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...this.getAuthHeaders(), 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
@@ -168,6 +175,10 @@ export class HttpAPIClient implements ElectronAPI {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private getAuthHeaders(): Record<string, string> {
+    return this.token ? { Authorization: `Bearer ${this.token}` } : {};
   }
 
   // ---------------------------------------------------------------------------
@@ -548,12 +559,24 @@ export class HttpAPIClient implements ElectronAPI {
   // HTTP Server API — in browser mode, server is already running (we're using it)
   httpServer: HttpServerAPI = {
     start: (): Promise<HttpServerStatus> =>
-      Promise.resolve({ running: true, port: parseInt(new URL(this.baseUrl).port, 10) }),
+      Promise.resolve({
+        running: true,
+        port: parseInt(new URL(this.baseUrl).port, 10),
+        token: this.token ?? null,
+      }),
     stop: (): Promise<HttpServerStatus> => {
       console.warn('[HttpAPIClient] Cannot stop HTTP server from browser mode');
-      return Promise.resolve({ running: true, port: parseInt(new URL(this.baseUrl).port, 10) });
+      return Promise.resolve({
+        running: true,
+        port: parseInt(new URL(this.baseUrl).port, 10),
+        token: this.token ?? null,
+      });
     },
     getStatus: (): Promise<HttpServerStatus> =>
-      Promise.resolve({ running: true, port: parseInt(new URL(this.baseUrl).port, 10) }),
+      Promise.resolve({
+        running: true,
+        port: parseInt(new URL(this.baseUrl).port, 10),
+        token: this.token ?? null,
+      }),
   };
 }

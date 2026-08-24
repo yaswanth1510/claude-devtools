@@ -21,6 +21,8 @@ export * from './DataCache';
 export type * from './FileSystemProvider';
 export * from './FileWatcher';
 export * from './HttpServer';
+export * from './HttpServerSecurity';
+export * from './KnownHostsVerifier';
 export * from './LocalFileSystemProvider';
 export * from './NotificationManager';
 export * from './ServiceContext';

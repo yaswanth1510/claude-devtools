@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isPathWithinAllowedDirectories,
+  validateDirectoryPath,
   validateFilePath,
   validateOpenPath,
 } from '../../../src/main/utils/pathValidation';
@@ -232,6 +233,18 @@ describe('pathValidation', () => {
         const result = validateFilePath('~/random-dir/file.txt', testProjectPath);
         expect(result.valid).toBe(false);
       });
+    });
+  });
+
+  describe('validateDirectoryPath', () => {
+    it('allows project roots and ~/.claude paths', () => {
+      expect(validateDirectoryPath(testProjectPath).valid).toBe(true);
+      expect(validateDirectoryPath('~/.claude').valid).toBe(true);
+    });
+
+    it('rejects relative and sensitive paths', () => {
+      expect(validateDirectoryPath('relative/project').valid).toBe(false);
+      expect(validateDirectoryPath(path.join(homeDir, '.ssh')).valid).toBe(false);
     });
   });
 
