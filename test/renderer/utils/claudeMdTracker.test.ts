@@ -1,56 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  detectClaudeMdFromFilePath,
-  getDirectory,
-  getParentDirectory,
-} from '@renderer/utils/claudeMdTracker';
+import { detectClaudeMdFromFilePath } from '@renderer/utils/claudeMdTracker';
 
-describe('claudeMdTracker path helpers', () => {
-  describe('getDirectory', () => {
-    it('returns directory from Unix path', () => {
-      expect(getDirectory('/a/b/file.ts')).toBe('/a/b');
-    });
-
-    it('returns directory from Windows path', () => {
-      expect(getDirectory('C:\\a\\b\\file.ts')).toBe('C:\\a\\b');
-    });
-
-    it('returns directory from mixed-separator path', () => {
-      expect(getDirectory('C:\\a/b\\file.ts')).toBe('C:\\a/b');
-    });
-
-    it('returns empty for bare filename', () => {
-      expect(getDirectory('file.ts')).toBe('');
-    });
-
-    it('returns root for root-level file', () => {
-      expect(getDirectory('/file.ts')).toBe('');
-    });
-  });
-
-  describe('getParentDirectory', () => {
-    it('returns parent from Unix path', () => {
-      expect(getParentDirectory('/a/b/c')).toBe('/a/b');
-    });
-
-    it('returns parent from Windows path', () => {
-      expect(getParentDirectory('C:\\a\\b\\c')).toBe('C:\\a\\b');
-    });
-
-    it('returns null at root', () => {
-      expect(getParentDirectory('/a')).toBeNull();
-    });
-
-    it('returns null for single segment', () => {
-      expect(getParentDirectory('a')).toBeNull();
-    });
-
-    it('returns parent from deeply nested path', () => {
-      expect(getParentDirectory('/a/b/c/d/e')).toBe('/a/b/c/d');
-    });
-  });
-
+describe('claudeMdTracker', () => {
   describe('detectClaudeMdFromFilePath', () => {
     it('detects CLAUDE.md files walking up Unix paths', () => {
       const result = detectClaudeMdFromFilePath('/repo/src/lib/file.ts', '/repo');

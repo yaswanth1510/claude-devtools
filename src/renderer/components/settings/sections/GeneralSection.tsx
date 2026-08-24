@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { api } from '@renderer/api';
+import { useCopyToClipboard } from '@renderer/hooks/useCopyToClipboard';
 import { Check, Copy, Loader2 } from 'lucide-react';
 
 import { SettingRow, SettingsSectionHeader, SettingsSelect, SettingsToggle } from '../components';
@@ -37,7 +38,7 @@ export const GeneralSection = ({
     port: 3456,
   });
   const [serverLoading, setServerLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
 
   // Fetch server status on mount
   useEffect(() => {
@@ -59,10 +60,8 @@ export const GeneralSection = ({
   const serverUrl = `http://localhost:${serverStatus.port}`;
 
   const handleCopyUrl = useCallback(() => {
-    void navigator.clipboard.writeText(serverUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [serverUrl]);
+    void copy(serverUrl);
+  }, [copy, serverUrl]);
 
   return (
     <div>

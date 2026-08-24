@@ -12,6 +12,8 @@ import { type ParsedMessage } from '@main/types';
 import { extractProjectName } from '@main/utils/pathDecoder';
 
 import {
+  buildToolResultMap,
+  buildToolUseMap,
   estimateTokens,
   extractToolResults,
   type ToolResultInfo,
@@ -455,6 +457,106 @@ export function checkTokenThresholdTrigger(
         triggerName: trigger.name,
       })
     );
+  }
+
+  return errors;
+}
+
+// =============================================================================
+// Trigger Router
+// =============================================================================
+
+/**
+ * Checks if a message matches a specific trigger.
+ * Routes to the appropriate trigger checker based on trigger configuration.
+ *
+ * @returns Array of DetectedError (can be multiple for token_threshold mode)
+ */
+export function checkTrigger(
+  message: ParsedMessage,
+  trigger: NotificationTrigger,
+  toolUseMap: Map<string, ToolUseInfo>,
+  toolResultMap: Map<string, ToolResultInfo>,
+  sessionId: string,
+  projectId: string,
+  filePath: string,
+  lineNumber: number
+): DetectedError[] {
+  // Check repository scope first - if repositoryIds is set, only trigger for matching repositories
+  if (!matchesRepositoryScope(projectId, trigger.repositoryIds)) {
+    return [];
+  }
+
+  // Handle token_threshold mode - check each tool_use individually
+  if (trigger.mode === 'token_threshold') {
+    return checkTokenThresholdTrigger(
+      message,
+      trigger,
+      toolResultMap,
+      sessionId,
+      projectId,
+      filePath,
+      lineNumber
+    );
+  }
+
+  if (trigger.contentType === 'tool_result') {
+    const error = checkToolResultTrigger(
+      message,
+      trigger,
+      toolUseMap,
+      sessionId,
+      projectId,
+      filePath,
+      lineNumber
+    );
+    return error ? [error] : [];
+  }
+
+  // Handle tool_use triggers (for future expansion)
+  if (trigger.contentType === 'tool_use') {
+    const error = checkToolUseTrigger(message, trigger, sessionId, projectId, filePath, lineNumber);
+    return error ? [error] : [];
+  }
+
+  return [];
+}
+
+/**
+ * Detects errors from messages by running every trigger against every message.
+ * Shared by live detection (ErrorDetector) and trigger preview (ErrorTriggerTester).
+ */
+export function detectErrorsForTriggers(
+  messages: ParsedMessage[],
+  triggers: NotificationTrigger[],
+  sessionId: string,
+  projectId: string,
+  filePath: string
+): DetectedError[] {
+  const errors: DetectedError[] = [];
+
+  // Maps for linking results to calls and estimating output tokens
+  const toolUseMap = buildToolUseMap(messages);
+  const toolResultMap = buildToolResultMap(messages);
+
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i];
+    const lineNumber = i + 1; // 1-based line numbers for JSONL
+
+    for (const trigger of triggers) {
+      errors.push(
+        ...checkTrigger(
+          message,
+          trigger,
+          toolUseMap,
+          toolResultMap,
+          sessionId,
+          projectId,
+          filePath,
+          lineNumber
+        )
+      );
+    }
   }
 
   return errors;

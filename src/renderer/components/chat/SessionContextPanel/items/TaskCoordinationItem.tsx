@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { COLOR_TEXT_MUTED, COLOR_TEXT_SECONDARY } from '@renderer/constants/cssVariables';
 import { ChevronRight, Users } from 'lucide-react';
 
+import { TurnLink } from '../components/TurnLink';
 import { formatTokens } from '../utils/formatting';
 
 import type { TaskCoordinationInjection } from '@renderer/types/contextInjection';
@@ -22,7 +23,6 @@ export const TaskCoordinationItem = ({
 }: Readonly<TaskCoordinationItemProps>): React.ReactElement => {
   const [expanded, setExpanded] = useState(false);
   const turnIndex = injection.turnIndex;
-  const isClickable = onNavigateToTurn && turnIndex >= 0;
   const hasBreakdown = injection.breakdown.length > 0;
 
   const containerContent = (
@@ -34,35 +34,7 @@ export const TaskCoordinationItem = ({
         />
       )}
       <Users size={12} style={{ color: COLOR_TEXT_MUTED, flexShrink: 0 }} />
-      {isClickable ? (
-        <span
-          role="link"
-          tabIndex={0}
-          className="cursor-pointer text-xs transition-opacity hover:opacity-80"
-          style={{
-            color: '#93c5fd',
-            textDecoration: 'underline',
-            textDecorationStyle: 'dotted' as const,
-            textUnderlineOffset: '2px',
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onNavigateToTurn(turnIndex);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.stopPropagation();
-              onNavigateToTurn(turnIndex);
-            }
-          }}
-        >
-          @Turn {turnIndex + 1}
-        </span>
-      ) : (
-        <span className="text-xs" style={{ color: COLOR_TEXT_SECONDARY }}>
-          @Turn {turnIndex + 1}
-        </span>
-      )}
+      <TurnLink turnIndex={turnIndex} onNavigateToTurn={onNavigateToTurn} />
       <span className="text-xs" style={{ color: COLOR_TEXT_MUTED }}>
         ~{formatTokens(injection.estimatedTokens)} tokens
       </span>

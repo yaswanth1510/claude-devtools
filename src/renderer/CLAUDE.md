@@ -46,6 +46,7 @@ components/
 - `displaySummary.ts` - Display summary generation
 - `formatters.ts` - Display formatting
 - `groupTransformer.ts` - Chat item grouping
+- `languageDetection.ts` - File name to syntax language inference
 - `lastOutputDetector.ts` - Last output detection
 - `modelExtractor.ts` - Model name extraction
 - `pathDisplay.ts` - Path display formatting
@@ -60,6 +61,7 @@ components/
 
 ## Hooks
 - `useAutoScrollBottom` - Auto-scroll chat to bottom
+- `useCopyToClipboard` - Clipboard copy with transient copied state
 - `useKeyboardShortcuts` - Keyboard shortcuts
 - `useTabNavigationController` - Turn navigation with highlighting
 - `useTabUI` - Per-tab UI state access

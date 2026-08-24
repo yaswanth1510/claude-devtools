@@ -8,6 +8,7 @@
  */
 
 import { extractFileReferences } from './groupTransformer';
+import { getDirectory, getParentDirectory, resolveFilePath } from './pathUtils';
 
 import type { ClaudeMdInjection, ClaudeMdSource, ClaudeMdStats } from '../types/claudeMd';
 import type { ClaudeMdFileInfo, ParsedMessage, SemanticStep } from '../types/data';
@@ -55,140 +56,8 @@ export function getDisplayName(path: string, _source: ClaudeMdSource): string {
   return path;
 }
 
-/**
- * Check if a path is absolute (starts with /).
- */
-function isAbsolutePath(path: string): boolean {
-  return path.startsWith('/') || path.startsWith('\\\\') || /^[a-zA-Z]:[\\/]/.test(path);
-}
-
-/**
- * Join paths, handling various path formats properly.
- * Handles:
- * - Absolute paths: /full/path/file.tsx (returned as-is)
- * - Relative paths with ./: ./apps/foo/bar.tsx (strips ./)
- * - Parent paths with ../: ../other/file.tsx (walks up directories)
- * - Plain paths: apps/foo/bar.tsx (joins with base)
- * - Paths with @ prefix: @apps/foo/bar.tsx (strips @ then joins)
- */
-function joinPaths(base: string, relative: string): string {
-  if (isAbsolutePath(relative)) {
-    return relative;
-  }
-
-  // Remove trailing slash from base if present
-  const cleanBase = trimTrailingSeparator(base);
-
-  // Handle @ prefix (file mention marker) - strip it if present
-  let cleanRelative = relative;
-  if (cleanRelative.startsWith('@')) {
-    cleanRelative = cleanRelative.slice(1);
-  }
-
-  // Handle ./ prefix (current directory)
-  if (cleanRelative.startsWith('./')) {
-    cleanRelative = cleanRelative.slice(2);
-  }
-
-  // Handle ../ prefixes (parent directory)
-  const separator = cleanBase.includes('\\') ? '\\' : '/';
-  const hasUnixRoot = cleanBase.startsWith('/');
-  const hasUncRoot = cleanBase.startsWith('\\\\');
-  const normalizedRelative = normalizeSeparators(cleanRelative, separator);
-  const baseParts = splitPath(cleanBase);
-  let remainingRelative = normalizedRelative;
-  while (remainingRelative.startsWith(`..${separator}`)) {
-    remainingRelative = remainingRelative.slice(3);
-    if (baseParts.length > 1) {
-      baseParts.pop();
-    }
-  }
-
-  // Join the normalized paths
-  let normalizedBase = baseParts.join(separator);
-  if (hasUnixRoot && !normalizedBase.startsWith('/')) {
-    normalizedBase = `/${normalizedBase}`;
-  }
-  if (hasUncRoot && !normalizedBase.startsWith('\\\\')) {
-    normalizedBase = `\\\\${normalizedBase}`;
-  }
-  return remainingRelative ? `${normalizedBase}${separator}${remainingRelative}` : normalizedBase;
-}
-
-function trimTrailingSeparator(input: string): string {
-  let end = input.length;
-  while (end > 0) {
-    const char = input[end - 1];
-    if (char !== '/' && char !== '\\') {
-      break;
-    }
-    end--;
-  }
-  return input.slice(0, end);
-}
-
-function normalizeSeparators(input: string, separator: '/' | '\\'): string {
-  let output = '';
-  let prevWasSeparator = false;
-
-  for (const char of input) {
-    const isSeparator = char === '/' || char === '\\';
-    if (isSeparator) {
-      if (!prevWasSeparator) {
-        output += separator;
-      }
-      prevWasSeparator = true;
-    } else {
-      output += char;
-      prevWasSeparator = false;
-    }
-  }
-
-  return output;
-}
-
-function splitPath(input: string): string[] {
-  const parts: string[] = [];
-  let current = '';
-
-  for (const char of input) {
-    if (char === '/' || char === '\\') {
-      if (current.length > 0) {
-        parts.push(current);
-        current = '';
-      }
-    } else {
-      current += char;
-    }
-  }
-
-  if (current.length > 0) {
-    parts.push(current);
-  }
-
-  return parts;
-}
-
 function normalizeForComparison(input: string): string {
   return input.replace(/\\/g, '/');
-}
-
-/**
- * Get the directory containing a file.
- */
-export function getDirectory(filePath: string): string {
-  const lastSep = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
-  if (lastSep === -1) return '';
-  return filePath.slice(0, lastSep);
-}
-
-/**
- * Get the parent directory of a path.
- */
-export function getParentDirectory(dirPath: string): string | null {
-  const lastSep = Math.max(dirPath.lastIndexOf('/'), dirPath.lastIndexOf('\\'));
-  if (lastSep <= 0) return null; // At root or invalid
-  return dirPath.slice(0, lastSep);
 }
 
 /**
@@ -241,7 +110,7 @@ export function extractUserMentionPaths(
   for (const ref of fileReferences) {
     if (ref.path) {
       // Convert to absolute if relative
-      const absolutePath = isAbsolutePath(ref.path) ? ref.path : joinPaths(projectRoot, ref.path);
+      const absolutePath = resolveFilePath(projectRoot, ref.path);
       paths.push(absolutePath);
     }
   }
@@ -357,8 +226,8 @@ export function createGlobalInjections(
   }
 
   // 3. Project memory - could be at root or in .claude folder
-  const projectMemoryPath = joinPaths(projectRoot, 'CLAUDE.md');
-  const projectMemoryAltPath = joinPaths(projectRoot, '.claude/CLAUDE.md');
+  const projectMemoryPath = resolveFilePath(projectRoot, 'CLAUDE.md');
+  const projectMemoryAltPath = resolveFilePath(projectRoot, '.claude/CLAUDE.md');
   // Add the main project CLAUDE.md
   const projectTokens = getTokens('project');
   if (projectTokens > 0) {
@@ -387,7 +256,7 @@ export function createGlobalInjections(
   }
 
   // 4. Project rules (*.md files in .claude/rules/)
-  const projectRulesPath = joinPaths(projectRoot, '.claude/rules/*.md');
+  const projectRulesPath = resolveFilePath(projectRoot, '.claude/rules/*.md');
   const projectRulesTokens = getTokens('project-rules');
   if (projectRulesTokens > 0) {
     injections.push({
@@ -402,7 +271,7 @@ export function createGlobalInjections(
   }
 
   // 5. Project local
-  const projectLocalPath = joinPaths(projectRoot, 'CLAUDE.local.md');
+  const projectLocalPath = resolveFilePath(projectRoot, 'CLAUDE.local.md');
   const projectLocalTokens = getTokens('project-local');
   if (projectLocalTokens > 0) {
     injections.push({
@@ -527,7 +396,7 @@ function computeClaudeMdStats(params: ComputeClaudeMdStatsParams): ClaudeMdStats
   const responseRefs = extractFileRefsFromResponses(aiGroup.responses);
   for (const ref of responseRefs) {
     if (ref.path) {
-      const absPath = isAbsolutePath(ref.path) ? ref.path : joinPaths(projectRoot, ref.path);
+      const absPath = resolveFilePath(projectRoot, ref.path);
       allFilePaths.push(absPath);
     }
   }

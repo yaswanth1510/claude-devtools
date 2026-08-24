@@ -29,13 +29,17 @@ import { validateTriggerId } from '../ipc/guards';
 import {
   ConfigManager,
   type NotificationTrigger,
-  type TriggerContentType,
-  type TriggerMatchField,
   type TriggerMode,
   type TriggerTokenType,
 } from '../services';
+import {
+  isValidTriggerPayload,
+  toNotificationTrigger,
+  toTriggerTestResult,
+  TRIGGER_PAYLOAD_ERROR,
+  type TriggerPayload,
+} from '../utils/triggerPayload';
 
-import type { TriggerColor } from '@shared/constants/triggerColors';
 import type { FastifyInstance } from 'fastify';
 
 const logger = createLogger('HTTP:config');
@@ -179,47 +183,14 @@ export function registerConfigRoutes(app: FastifyInstance): void {
   });
 
   // Add trigger
-  app.post<{
-    Body: {
-      id: string;
-      name: string;
-      enabled: boolean;
-      contentType: string;
-      mode?: TriggerMode;
-      requireError?: boolean;
-      toolName?: string;
-      matchField?: string;
-      matchPattern?: string;
-      ignorePatterns?: string[];
-      tokenThreshold?: number;
-      tokenType?: TriggerTokenType;
-      repositoryIds?: string[];
-      color?: string;
-    };
-  }>('/api/config/triggers', async (request) => {
+  app.post<{ Body: TriggerPayload }>('/api/config/triggers', async (request) => {
     try {
       const trigger = request.body;
-      if (!trigger.id || !trigger.name || !trigger.contentType) {
-        return { success: false, error: 'Trigger must have id, name, and contentType' };
+      if (!isValidTriggerPayload(trigger)) {
+        return { success: false, error: TRIGGER_PAYLOAD_ERROR };
       }
 
-      configManager.addTrigger({
-        id: trigger.id,
-        name: trigger.name,
-        enabled: trigger.enabled,
-        contentType: trigger.contentType as TriggerContentType,
-        mode: trigger.mode ?? (trigger.requireError ? 'error_status' : 'content_match'),
-        requireError: trigger.requireError,
-        toolName: trigger.toolName,
-        matchField: trigger.matchField as TriggerMatchField | undefined,
-        matchPattern: trigger.matchPattern,
-        ignorePatterns: trigger.ignorePatterns,
-        tokenThreshold: trigger.tokenThreshold,
-        tokenType: trigger.tokenType,
-        repositoryIds: trigger.repositoryIds,
-        color: trigger.color as TriggerColor | undefined,
-        isBuiltin: false,
-      });
+      configManager.addTrigger(toNotificationTrigger(trigger));
 
       return { success: true };
     } catch (error) {
@@ -311,23 +282,7 @@ export function registerConfigRoutes(app: FastifyInstance): void {
         const { errorDetector } = await import('../services');
         const result = await errorDetector.testTrigger(request.body, 50);
 
-        const errors = result.errors.map((error) => ({
-          id: error.id,
-          sessionId: error.sessionId,
-          projectId: error.projectId,
-          message: error.message,
-          timestamp: error.timestamp,
-          source: error.source,
-          toolUseId: error.toolUseId,
-          subagentId: error.subagentId,
-          lineNumber: error.lineNumber,
-          context: { projectName: error.context.projectName },
-        }));
-
-        return {
-          success: true,
-          data: { totalCount: result.totalCount, errors, truncated: result.truncated },
-        };
+        return { success: true, data: toTriggerTestResult(result) };
       } catch (error) {
         logger.error('Error in POST /api/config/triggers/test:', error);
         return {

@@ -8,6 +8,7 @@ import { CopyablePath } from '@renderer/components/common/CopyablePath';
 import { resolveAbsolutePath, shortenDisplayPath } from '@renderer/utils/pathDisplay';
 import { File } from 'lucide-react';
 
+import { TurnLink } from '../components/TurnLink';
 import { formatTokens } from '../utils/formatting';
 
 import type { MentionedFileInjection } from '@renderer/types/contextInjection';
@@ -24,7 +25,6 @@ export const MentionedFileItem = ({
   onNavigateToTurn,
 }: Readonly<MentionedFileItemProps>): React.ReactElement => {
   const turnIndex = injection.firstSeenTurnIndex;
-  const isClickable = onNavigateToTurn && turnIndex >= 0;
   const displayPath = shortenDisplayPath(injection.path, projectRoot);
   const absolutePath = resolveAbsolutePath(injection.path, projectRoot);
 
@@ -54,37 +54,11 @@ export const MentionedFileItem = ({
         <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
           ~{formatTokens(injection.estimatedTokens)} tokens
         </span>
-        {isClickable ? (
-          <span
-            role="link"
-            tabIndex={0}
-            className="cursor-pointer text-xs transition-opacity hover:opacity-80"
-            style={{
-              color: '#93c5fd',
-              textDecoration: 'underline',
-              textDecorationStyle: 'dotted' as const,
-              textUnderlineOffset: '2px',
-            }}
-            onClick={() => onNavigateToTurn(turnIndex)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                onNavigateToTurn(turnIndex);
-              }
-            }}
-          >
-            @Turn {turnIndex + 1}
-          </span>
-        ) : (
-          <span
-            className="text-xs"
-            style={{
-              color: 'var(--color-text-muted)',
-              opacity: 0.7,
-            }}
-          >
-            @Turn {turnIndex + 1}
-          </span>
-        )}
+        <TurnLink
+          turnIndex={turnIndex}
+          onNavigateToTurn={onNavigateToTurn}
+          fallbackStyle={{ color: 'var(--color-text-muted)', opacity: 0.7 }}
+        />
       </div>
     </div>
   );
