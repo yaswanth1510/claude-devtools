@@ -4,8 +4,9 @@
  * A small icon appears on hover as visual affordance.
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 
+import { useCopyToClipboard } from '@renderer/hooks/useCopyToClipboard';
 import { Check, Copy } from 'lucide-react';
 
 interface CopyablePathProps {
@@ -25,21 +26,15 @@ export const CopyablePath = ({
   className = '',
   style,
 }: Readonly<CopyablePathProps>): React.ReactElement => {
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard(1500);
 
   const handleCopy = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation();
       e.preventDefault();
-      try {
-        await navigator.clipboard.writeText(copyText);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      } catch {
-        // Clipboard API may not be available in all contexts
-      }
+      await copy(copyText);
     },
-    [copyText]
+    [copy, copyText]
   );
 
   return (

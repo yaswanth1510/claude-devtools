@@ -23,6 +23,7 @@ import {
   generateInjectionId,
   getDisplayName,
 } from './claudeMdTracker';
+import { resolveFilePath } from './pathUtils';
 
 import type { ClaudeMdInjection, ClaudeMdSource } from '../types/claudeMd';
 import type {
@@ -445,126 +446,6 @@ interface ComputeContextStatsParams {
   directoryTokenData?: Record<string, ClaudeMdFileInfo>;
 }
 
-/**
- * Helper to check if a path is absolute.
- */
-function isAbsolutePath(path: string): boolean {
-  return (
-    path.startsWith('/') ||
-    path.startsWith('~/') ||
-    path.startsWith('~\\') ||
-    path === '~' ||
-    path.startsWith('\\\\') ||
-    /^[a-zA-Z]:[\\/]/.test(path)
-  );
-}
-
-/**
- * Helper to join paths, handling various path formats properly.
- * Handles:
- * - Absolute paths: /full/path/file.tsx (returned as-is)
- * - Relative paths with ./: ./apps/foo/bar.tsx (strips ./)
- * - Parent paths with ../: ../other/file.tsx (walks up directories)
- * - Plain paths: apps/foo/bar.tsx (joins with base)
- * - Paths with @ prefix: @apps/foo/bar.tsx (strips @ then joins)
- */
-function joinPaths(base: string, relative: string): string {
-  if (isAbsolutePath(relative)) {
-    return relative;
-  }
-
-  const cleanBase = trimTrailingSeparator(base);
-
-  // Handle @ prefix (file mention marker) - strip it if present
-  let cleanRelative = relative;
-  if (cleanRelative.startsWith('@')) {
-    cleanRelative = cleanRelative.slice(1);
-  }
-
-  // Handle ./ prefix (current directory)
-  if (cleanRelative.startsWith('./')) {
-    cleanRelative = cleanRelative.slice(2);
-  }
-
-  // Handle ../ prefixes (parent directory)
-  const separator = cleanBase.includes('\\') ? '\\' : '/';
-  const hasUnixRoot = cleanBase.startsWith('/');
-  const hasUncRoot = cleanBase.startsWith('\\\\');
-  const normalizedRelative = normalizeSeparators(cleanRelative, separator);
-  const baseParts = splitPath(cleanBase);
-  let remainingRelative = normalizedRelative;
-  while (remainingRelative.startsWith(`..${separator}`)) {
-    remainingRelative = remainingRelative.slice(3);
-    if (baseParts.length > 1) {
-      baseParts.pop();
-    }
-  }
-
-  // Join the normalized paths
-  let normalizedBase = baseParts.join(separator);
-  if (hasUnixRoot && !normalizedBase.startsWith('/')) {
-    normalizedBase = `/${normalizedBase}`;
-  }
-  if (hasUncRoot && !normalizedBase.startsWith('\\\\')) {
-    normalizedBase = `\\\\${normalizedBase}`;
-  }
-  return remainingRelative ? `${normalizedBase}${separator}${remainingRelative}` : normalizedBase;
-}
-
-function trimTrailingSeparator(input: string): string {
-  let end = input.length;
-  while (end > 0) {
-    const char = input[end - 1];
-    if (char !== '/' && char !== '\\') {
-      break;
-    }
-    end--;
-  }
-  return input.slice(0, end);
-}
-
-function normalizeSeparators(input: string, separator: '/' | '\\'): string {
-  let output = '';
-  let prevWasSeparator = false;
-
-  for (const char of input) {
-    const isSeparator = char === '/' || char === '\\';
-    if (isSeparator) {
-      if (!prevWasSeparator) {
-        output += separator;
-      }
-      prevWasSeparator = true;
-    } else {
-      output += char;
-      prevWasSeparator = false;
-    }
-  }
-
-  return output;
-}
-
-function splitPath(input: string): string[] {
-  const parts: string[] = [];
-  let current = '';
-
-  for (const char of input) {
-    if (char === '/' || char === '\\') {
-      if (current.length > 0) {
-        parts.push(current);
-        current = '';
-      }
-    } else {
-      current += char;
-    }
-  }
-
-  if (current.length > 0) {
-    parts.push(current);
-  }
-
-  return parts;
-}
-
 function normalizeForComparison(input: string): string {
   return input.replace(/\\/g, '/');
 }
@@ -642,7 +523,7 @@ function computeContextStats(params: ComputeContextStatsParams): ContextStats {
   const responseRefs = extractFileRefsFromResponses(aiGroup.responses);
   for (const ref of responseRefs) {
     if (ref.path) {
-      const absPath = isAbsolutePath(ref.path) ? ref.path : joinPaths(projectRoot, ref.path);
+      const absPath = resolveFilePath(projectRoot, ref.path);
       allFilePaths.push(absPath);
     }
   }
@@ -698,9 +579,7 @@ function computeContextStats(params: ComputeContextStatsParams): ContextStats {
       if (!fileRef.path) continue;
 
       // Convert to absolute path if needed
-      const absolutePath = isAbsolutePath(fileRef.path)
-        ? fileRef.path
-        : joinPaths(projectRoot, fileRef.path);
+      const absolutePath = resolveFilePath(projectRoot, fileRef.path);
 
       // Skip if already seen
       if (previousPaths.has(absolutePath)) {
@@ -731,9 +610,7 @@ function computeContextStats(params: ComputeContextStatsParams): ContextStats {
   for (const fileRef of responseRefs) {
     if (!fileRef.path) continue;
 
-    const absolutePath = isAbsolutePath(fileRef.path)
-      ? fileRef.path
-      : joinPaths(projectRoot, fileRef.path);
+    const absolutePath = resolveFilePath(projectRoot, fileRef.path);
 
     if (previousPaths.has(absolutePath)) {
       continue;

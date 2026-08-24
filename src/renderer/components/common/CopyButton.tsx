@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 
+import { useCopyToClipboard } from '@renderer/hooks/useCopyToClipboard';
 import { Check, Copy } from 'lucide-react';
 
 interface CopyButtonProps {
@@ -26,19 +27,13 @@ export const CopyButton: React.FC<CopyButtonProps> = ({
   bgColor = 'var(--code-bg)',
   inline = false,
 }) => {
-  const [isCopied, setIsCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
 
-  const handleCopy = async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
-    } catch {
-      // Silently fail — clipboard API may be unavailable
-    }
+  const handleCopy = (): void => {
+    void copy(text);
   };
 
-  const icon = isCopied ? (
+  const icon = copied ? (
     <Check className="size-3.5" style={{ color: 'var(--badge-success-bg)' }} />
   ) : (
     <Copy className="size-3.5" style={{ color: 'var(--color-text-muted)' }} />

@@ -6,7 +6,7 @@ State management with slices pattern for domain organization.
 - `index.ts` - Store creation, combines all slices
 - `types.ts` - AppState type definition
 - `slices/` - Individual domain slices
-- `utils/` - Store utilities (`paneHelpers.ts`, `pathResolution.ts`)
+- `utils/` - Store utilities (`paneHelpers.ts`, `stateResetHelpers.ts`)
 
 ## Slices (12 total)
 | Slice | Purpose |

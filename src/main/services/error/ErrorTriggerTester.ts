@@ -11,25 +11,13 @@ import { parseJsonlFile } from '@main/utils/jsonl';
 import { createLogger } from '@shared/utils/logger';
 import * as path from 'path';
 
-import {
-  buildToolResultMap,
-  buildToolUseMap,
-  type ToolResultInfo,
-  type ToolUseInfo,
-} from '../analysis/ToolResultExtractor';
 import { ProjectScanner } from '../discovery/ProjectScanner';
 import { type NotificationTrigger } from '../infrastructure/ConfigManager';
 
 const logger = createLogger('Service:ErrorTriggerTester');
 
 import { type DetectedError } from './ErrorMessageBuilder';
-import {
-  checkTokenThresholdTrigger,
-  checkToolResultTrigger,
-  checkToolUseTrigger,
-  matchesRepositoryScope,
-  preResolveRepositoryIds,
-} from './ErrorTriggerChecker';
+import { detectErrorsForTriggers, preResolveRepositoryIds } from './ErrorTriggerChecker';
 
 // =============================================================================
 // Trigger Testing (Preview Feature)
@@ -198,9 +186,9 @@ async function processSessionFiles(
       const sessionId = filename.replace(/\.jsonl$/, '');
 
       // Test the trigger against each message
-      const sessionErrors = detectErrorsWithTrigger(
+      const sessionErrors = detectErrorsForTriggers(
         messages,
-        trigger,
+        [trigger],
         sessionId,
         projectId,
         filePath
@@ -228,102 +216,4 @@ async function processSessionFiles(
   }
 
   return false; // Don't break outer loop
-}
-
-/**
- * Detects errors from messages using a single trigger.
- * Used by testTrigger for preview functionality.
- */
-function detectErrorsWithTrigger(
-  messages: ParsedMessage[],
-  trigger: NotificationTrigger,
-  sessionId: string,
-  projectId: string,
-  filePath: string
-): DetectedError[] {
-  const errors: DetectedError[] = [];
-
-  // Build tool_use map for linking results to calls
-  const toolUseMap = buildToolUseMap(messages);
-  // Build tool_result map for estimating output tokens
-  const toolResultMap = buildToolResultMap(messages);
-
-  for (let i = 0; i < messages.length; i++) {
-    const message = messages[i];
-    const lineNumber = i + 1; // 1-based line numbers for JSONL
-
-    const triggerErrors = checkTrigger(
-      message,
-      trigger,
-      toolUseMap,
-      toolResultMap,
-      sessionId,
-      projectId,
-      filePath,
-      lineNumber
-    );
-
-    // Add all detected errors (can be multiple for token_threshold mode)
-    errors.push(...triggerErrors);
-  }
-
-  return errors;
-}
-
-/**
- * Checks if a message matches a specific trigger.
- * Internal helper for detectErrorsWithTrigger.
- */
-function checkTrigger(
-  message: ParsedMessage,
-  trigger: NotificationTrigger,
-  toolUseMap: Map<string, ToolUseInfo>,
-  toolResultMap: Map<string, ToolResultInfo>,
-  sessionId: string,
-  projectId: string,
-  filePath: string,
-  lineNumber: number
-): DetectedError[] {
-  // Check repository scope first - if repositoryIds is set, only trigger for matching repositories
-  if (!matchesRepositoryScope(projectId, trigger.repositoryIds)) {
-    return [];
-  }
-
-  // Use the mode directly (mode is now required in NotificationTrigger)
-  const effectiveMode = trigger.mode;
-
-  // Handle token_threshold mode - check each tool_use individually
-  if (effectiveMode === 'token_threshold') {
-    return checkTokenThresholdTrigger(
-      message,
-      trigger,
-      toolResultMap,
-      sessionId,
-      projectId,
-      filePath,
-      lineNumber
-    );
-  }
-
-  // Handle tool_result triggers
-  if (trigger.contentType === 'tool_result') {
-    const error = checkToolResultTrigger(
-      message,
-      trigger,
-      toolUseMap,
-      sessionId,
-      projectId,
-      filePath,
-      lineNumber
-    );
-    return error ? [error] : [];
-  }
-
-  // Handle tool_use triggers (for future expansion)
-  if (trigger.contentType === 'tool_use') {
-    const error = checkToolUseTrigger(message, trigger, sessionId, projectId, filePath, lineNumber);
-    return error ? [error] : [];
-  }
-
-  return [];
 }

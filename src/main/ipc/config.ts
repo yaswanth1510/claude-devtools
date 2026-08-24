@@ -26,16 +26,20 @@ import {
   type AppConfig,
   ConfigManager,
   type NotificationTrigger,
-  type TriggerContentType,
-  type TriggerMatchField,
   type TriggerMode,
   type TriggerTokenType,
 } from '../services';
+import {
+  isValidTriggerPayload,
+  toNotificationTrigger,
+  toTriggerTestResult,
+  TRIGGER_PAYLOAD_ERROR,
+  type TriggerPayload,
+  type TriggerTestResult,
+} from '../utils/triggerPayload';
 
 import { validateConfigUpdatePayload } from './configValidation';
 import { validateTriggerId } from './guards';
-
-import type { TriggerColor } from '@shared/constants/triggerColors';
 
 const logger = createLogger('IPC:config');
 
@@ -264,48 +268,14 @@ async function handleClearSnooze(_event: IpcMainInvokeEvent): Promise<ConfigResu
  */
 async function handleAddTrigger(
   _event: IpcMainInvokeEvent,
-  trigger: {
-    id: string;
-    name: string;
-    enabled: boolean;
-    contentType: string;
-    mode?: TriggerMode;
-    requireError?: boolean;
-    toolName?: string;
-    matchField?: string;
-    matchPattern?: string;
-    ignorePatterns?: string[];
-    tokenThreshold?: number;
-    tokenType?: TriggerTokenType;
-    repositoryIds?: string[];
-    color?: string;
-  }
+  trigger: TriggerPayload
 ): Promise<ConfigResult> {
   try {
-    if (!trigger.id || !trigger.name || !trigger.contentType) {
-      return {
-        success: false,
-        error: 'Trigger must have id, name, and contentType',
-      };
+    if (!isValidTriggerPayload(trigger)) {
+      return { success: false, error: TRIGGER_PAYLOAD_ERROR };
     }
 
-    configManager.addTrigger({
-      id: trigger.id,
-      name: trigger.name,
-      enabled: trigger.enabled,
-      contentType: trigger.contentType as TriggerContentType,
-      mode: trigger.mode ?? (trigger.requireError ? 'error_status' : 'content_match'),
-      requireError: trigger.requireError,
-      toolName: trigger.toolName,
-      matchField: trigger.matchField as TriggerMatchField | undefined,
-      matchPattern: trigger.matchPattern,
-      ignorePatterns: trigger.ignorePatterns,
-      tokenThreshold: trigger.tokenThreshold,
-      tokenType: trigger.tokenType,
-      repositoryIds: trigger.repositoryIds,
-      color: trigger.color as TriggerColor | undefined,
-      isBuiltin: false,
-    });
+    configManager.addTrigger(toNotificationTrigger(trigger));
 
     return { success: true };
   } catch (error) {
@@ -419,48 +389,12 @@ async function handleGetTriggers(
 async function handleTestTrigger(
   _event: IpcMainInvokeEvent,
   trigger: NotificationTrigger
-): Promise<
-  ConfigResult<{
-    totalCount: number;
-    errors: {
-      id: string;
-      sessionId: string;
-      projectId: string;
-      message: string;
-      timestamp: number;
-      source: string;
-      toolUseId?: string;
-      subagentId?: string;
-      lineNumber?: number;
-      context: { projectName: string };
-    }[];
-    /** True if results were truncated due to safety limits */
-    truncated?: boolean;
-  }>
-> {
+): Promise<ConfigResult<TriggerTestResult>> {
   try {
     const { errorDetector } = await import('../services');
     const result = await errorDetector.testTrigger(trigger, 50);
 
-    // Map the DetectedError objects to the format expected by the renderer
-    // Include toolUseId, subagentId, and lineNumber for deep linking to exact error location
-    const errors = result.errors.map((error) => ({
-      id: error.id,
-      sessionId: error.sessionId,
-      projectId: error.projectId,
-      message: error.message,
-      timestamp: error.timestamp,
-      source: error.source,
-      toolUseId: error.toolUseId,
-      subagentId: error.subagentId,
-      lineNumber: error.lineNumber,
-      context: { projectName: error.context.projectName },
-    }));
-
-    return {
-      success: true,
-      data: { totalCount: result.totalCount, errors, truncated: result.truncated },
-    };
+    return { success: true, data: toTriggerTestResult(result) };
   } catch (error) {
     logger.error('Error in config:testTrigger:', error);
     return {

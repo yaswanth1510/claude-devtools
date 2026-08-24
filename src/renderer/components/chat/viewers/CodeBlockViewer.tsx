@@ -1,10 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 
+import { useCopyToClipboard } from '@renderer/hooks/useCopyToClipboard';
+import { inferLanguage } from '@renderer/utils/languageDetection';
 import { getBaseName } from '@renderer/utils/pathUtils';
-import { createLogger } from '@shared/utils/logger';
 import { Check, Copy, FileCode } from 'lucide-react';
-
-const logger = createLogger('Component:CodeBlockViewer');
 
 import { highlightLine } from './syntaxHighlighter';
 
@@ -22,98 +21,6 @@ interface CodeBlockViewerProps {
 }
 
 // =============================================================================
-// Language Detection
-// =============================================================================
-
-const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
-  // JavaScript/TypeScript
-  '.ts': 'typescript',
-  '.tsx': 'tsx',
-  '.js': 'javascript',
-  '.jsx': 'jsx',
-  '.mjs': 'javascript',
-  '.cjs': 'javascript',
-
-  // Python
-  '.py': 'python',
-  '.pyw': 'python',
-  '.pyx': 'python',
-
-  // Web
-  '.html': 'html',
-  '.htm': 'html',
-  '.css': 'css',
-  '.scss': 'scss',
-  '.sass': 'sass',
-  '.less': 'less',
-
-  // Data formats
-  '.json': 'json',
-  '.jsonl': 'json',
-  '.yaml': 'yaml',
-  '.yml': 'yaml',
-  '.toml': 'toml',
-  '.xml': 'xml',
-
-  // Shell
-  '.sh': 'bash',
-  '.bash': 'bash',
-  '.zsh': 'zsh',
-  '.fish': 'fish',
-
-  // Systems
-  '.rs': 'rust',
-  '.go': 'go',
-  '.c': 'c',
-  '.h': 'c',
-  '.cpp': 'cpp',
-  '.cc': 'cpp',
-  '.hpp': 'hpp',
-  '.java': 'java',
-  '.kt': 'kotlin',
-  '.swift': 'swift',
-
-  // Config
-  '.env': 'env',
-  '.gitignore': 'gitignore',
-  '.dockerignore': 'dockerignore',
-  '.md': 'markdown',
-  '.mdx': 'mdx',
-
-  // Other
-  '.sql': 'sql',
-  '.graphql': 'graphql',
-  '.gql': 'graphql',
-  '.vue': 'vue',
-  '.svelte': 'svelte',
-  '.rb': 'ruby',
-  '.php': 'php',
-  '.lua': 'lua',
-  '.r': 'r',
-  '.R': 'r',
-};
-
-/**
- * Infer language from file name/extension.
- */
-function inferLanguage(fileName: string): string {
-  // Check for dotfiles with specific names
-  const baseName = getBaseName(fileName);
-  if (baseName === 'Dockerfile') return 'dockerfile';
-  if (baseName === 'Makefile') return 'makefile';
-  if (baseName.startsWith('.env')) return 'env';
-
-  // Extract extension
-  const extMatch = /(\.[^./]+)$/.exec(fileName);
-  if (extMatch) {
-    const ext = extMatch[1].toLowerCase();
-    return EXTENSION_LANGUAGE_MAP[ext] ?? 'text';
-  }
-
-  return 'text';
-}
-
-// =============================================================================
 // Component
 // =============================================================================
 
@@ -125,7 +32,7 @@ export const CodeBlockViewer: React.FC<CodeBlockViewerProps> = ({
   endLine,
   maxHeight = 'max-h-96',
 }): React.JSX.Element => {
-  const [isCopied, setIsCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
 
   // Infer language from file extension if not provided
   const detectedLanguage = language ?? inferLanguage(fileName);
@@ -137,15 +44,8 @@ export const CodeBlockViewer: React.FC<CodeBlockViewerProps> = ({
   // Calculate the actual line range for display
   const actualEndLine = endLine ?? startLine + totalLines - 1;
 
-  // Handle copy
-  const handleCopy = async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(content);
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
-    } catch {
-      logger.error('Failed to copy to clipboard');
-    }
+  const handleCopy = (): void => {
+    void copy(content);
   };
 
   // Extract just the filename for display
@@ -200,7 +100,7 @@ export const CodeBlockViewer: React.FC<CodeBlockViewerProps> = ({
           title="Copy to clipboard"
           style={{ backgroundColor: 'transparent' }}
         >
-          {isCopied ? (
+          {copied ? (
             <Check className="size-4" style={{ color: 'var(--badge-success-bg)' }} />
           ) : (
             <Copy className="size-4" style={{ color: 'var(--color-text-muted)' }} />

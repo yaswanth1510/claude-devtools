@@ -11,9 +11,8 @@ import {
   extractFileReferences,
   transformChunksToConversation,
 } from '@renderer/utils/groupTransformer';
+import { resolveFilePath } from '@renderer/utils/pathUtils';
 import { createLogger } from '@shared/utils/logger';
-
-import { resolveFilePath } from '../utils/pathResolution';
 
 const logger = createLogger('Store:sessionDetail');
 
