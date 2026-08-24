@@ -57,15 +57,16 @@ export const GeneralSection = ({
     }
   }, []);
 
-  const serverUrl = `http://127.0.0.1:${serverStatus.port}${
+  const serverBaseUrl = `http://127.0.0.1:${serverStatus.port}`;
+  const serverAccessUrl = `${serverBaseUrl}${
     serverStatus.token ? `/?token=${encodeURIComponent(serverStatus.token)}` : ''
   }`;
 
   const handleCopyUrl = useCallback(() => {
-    void navigator.clipboard.writeText(serverUrl);
+    void navigator.clipboard.writeText(serverAccessUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [serverUrl]);
+  }, [serverAccessUrl]);
 
   return (
     <div>
@@ -100,7 +101,7 @@ export const GeneralSection = ({
       <SettingsSectionHeader title="Browser Access" />
       <SettingRow
         label="Enable server mode"
-        description="Start an HTTP server to access the UI from a browser or embed in iframes"
+        description="Start an HTTP server to access the UI from a browser or embed in iframes. Copying the access link grants access; keep it private."
       >
         {serverLoading ? (
           <Loader2 className="size-5 animate-spin" style={{ color: 'var(--color-text-muted)' }} />
@@ -130,7 +131,7 @@ export const GeneralSection = ({
               border: '1px solid var(--color-border)',
             }}
           >
-            {serverUrl}
+            {serverBaseUrl}
           </code>
           <button
             onClick={handleCopyUrl}
@@ -141,7 +142,7 @@ export const GeneralSection = ({
             }}
           >
             {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-            {copied ? 'Copied' : 'Copy URL'}
+            {copied ? 'Copied' : 'Copy access link'}
           </button>
         </div>
       )}

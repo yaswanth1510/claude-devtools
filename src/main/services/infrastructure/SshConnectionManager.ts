@@ -137,12 +137,9 @@ export class SshConnectionManager extends EventEmitter {
       const client = new Client();
       this.client = client;
 
-      const connectConfig = await this.buildConnectConfig(
-        config,
-        (error) => {
-          hostKeyState.error = error;
-        }
-      );
+      const connectConfig = await this.buildConnectConfig(config, (error) => {
+        hostKeyState.error = error;
+      });
 
       await new Promise<void>((resolve, reject) => {
         client.on('ready', () => resolve());
@@ -187,8 +184,7 @@ export class SshConnectionManager extends EventEmitter {
       this.setState('connected');
       logger.info(`SSH connected to ${config.host}:${config.port}`);
     } catch (err) {
-      const message =
-        hostKeyState.error ?? (err instanceof Error ? err.message : String(err));
+      const message = hostKeyState.error ?? (err instanceof Error ? err.message : String(err));
       logger.error(`SSH connection failed: ${message}`);
       this.lastError = message;
       this.setState('error');
@@ -205,12 +201,9 @@ export class SshConnectionManager extends EventEmitter {
     const hostKeyState: { error?: string } = {};
 
     try {
-      const connectConfig = await this.buildConnectConfig(
-        config,
-        (error) => {
-          hostKeyState.error = error;
-        }
-      );
+      const connectConfig = await this.buildConnectConfig(config, (error) => {
+        hostKeyState.error = error;
+      });
 
       await new Promise<void>((resolve, reject) => {
         testClient.on('ready', () => resolve());
@@ -233,8 +226,7 @@ export class SshConnectionManager extends EventEmitter {
       return { success: true };
     } catch (err) {
       testClient.end();
-      const message =
-        hostKeyState.error ?? (err instanceof Error ? err.message : String(err));
+      const message = hostKeyState.error ?? (err instanceof Error ? err.message : String(err));
       return { success: false, error: message };
     }
   }

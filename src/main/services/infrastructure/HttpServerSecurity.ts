@@ -45,7 +45,10 @@ export function isValidHostHeader(hostHeader: string | undefined, boundPort: num
   return port === undefined || port === boundPort;
 }
 
-export function isValidBearerToken(providedToken: string | undefined, expectedToken: string): boolean {
+export function isValidBearerToken(
+  providedToken: string | undefined,
+  expectedToken: string
+): boolean {
   if (!providedToken) return false;
 
   const provided = Buffer.from(providedToken, 'utf8');
@@ -53,10 +56,7 @@ export function isValidBearerToken(providedToken: string | undefined, expectedTo
   return provided.length === expected.length && timingSafeEqual(provided, expected);
 }
 
-export function getBearerTokens(
-  authorization: string | undefined,
-  requestUrl: string
-): string[] {
+export function getBearerTokens(authorization: string | undefined, requestUrl: string): string[] {
   const tokens: string[] = [];
   if (authorization?.startsWith('Bearer ')) {
     const token = authorization.slice('Bearer '.length);
@@ -71,11 +71,4 @@ export function getBearerTokens(
   }
 
   return tokens;
-}
-
-export function getBearerToken(
-  authorization: string | undefined,
-  requestUrl: string
-): string | undefined {
-  return getBearerTokens(authorization, requestUrl)[0];
 }

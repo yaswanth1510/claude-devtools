@@ -58,6 +58,20 @@ describe('KnownHostsVerifier', () => {
     expect(() => verifier.verify('example.com', 22, key)).toThrow('not present');
   });
 
+  it('matches wildcard hostname patterns', async () => {
+    const verifier = await verifierFor(`*.example.com ssh-ed25519 ${keyBase64}`);
+    expect(() => verifier.verify('api.example.com', 22, key)).not.toThrow();
+    expect(() => verifier.verify('example.com', 22, key)).toThrow('not present');
+  });
+
+  it('honors negated hostname patterns within an entry', async () => {
+    const verifier = await verifierFor(
+      `*.example.com,!blocked.example.com ssh-ed25519 ${keyBase64}`
+    );
+    expect(() => verifier.verify('api.example.com', 22, key)).not.toThrow();
+    expect(() => verifier.verify('blocked.example.com', 22, key)).toThrow('not present');
+  });
+
   it('rejects a mismatched key as a possible MITM', async () => {
     const verifier = await verifierFor(`example.com ssh-ed25519 ${keyBase64}`);
     expect(() => verifier.verify('example.com', 22, Buffer.from('different'))).toThrow(

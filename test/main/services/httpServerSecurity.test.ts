@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  getBearerToken,
+  getBearerTokens,
   isValidBearerToken,
   isValidHostHeader,
 } from '../../../src/main/services/infrastructure/HttpServerSecurity';
@@ -31,19 +31,19 @@ describe('HTTP server security guards', () => {
 
   describe('token guard', () => {
     it('accepts a matching Authorization bearer token', () => {
-      const provided = getBearerToken(`Bearer ${token}`, '/api/version');
+      const [provided] = getBearerTokens(`Bearer ${token}`, '/api/version');
       expect(isValidBearerToken(provided, token)).toBe(true);
     });
 
     it('accepts a matching query token', () => {
-      const provided = getBearerToken(undefined, `/api/events?token=${token}`);
+      const [provided] = getBearerTokens(undefined, `/api/events?token=${token}`);
       expect(isValidBearerToken(provided, token)).toBe(true);
     });
 
     it('rejects missing and wrong tokens', () => {
       expect(isValidBearerToken(undefined, token)).toBe(false);
       expect(isValidBearerToken('wrong', token)).toBe(false);
-      expect(isValidBearerToken(getBearerToken('Basic abc', '/api/version'), token)).toBe(false);
+      expect(getBearerTokens('Basic abc', '/api/version')).toHaveLength(0);
     });
   });
 });

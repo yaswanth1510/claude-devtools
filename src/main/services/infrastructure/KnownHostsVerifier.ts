@@ -60,6 +60,35 @@ function isDecimal(value: string): boolean {
   return value.length > 0 && [...value].every((character) => character >= '0' && character <= '9');
 }
 
+function globMatches(pattern: string, value: string): boolean {
+  let patternIndex = 0;
+  let valueIndex = 0;
+  let starIndex = -1;
+  let starValueIndex = -1;
+
+  while (valueIndex < value.length) {
+    const patternCharacter = pattern[patternIndex];
+    if (
+      patternCharacter === '?' ||
+      patternCharacter?.toLowerCase() === value[valueIndex]?.toLowerCase()
+    ) {
+      patternIndex++;
+      valueIndex++;
+    } else if (patternCharacter === '*') {
+      starIndex = patternIndex++;
+      starValueIndex = valueIndex;
+    } else if (starIndex >= 0) {
+      patternIndex = starIndex + 1;
+      valueIndex = ++starValueIndex;
+    } else {
+      return false;
+    }
+  }
+
+  while (pattern[patternIndex] === '*') patternIndex++;
+  return patternIndex === pattern.length;
+}
+
 function safeEqual(left: Buffer, right: Buffer): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
 }
@@ -93,10 +122,26 @@ function hostPatternMatches(pattern: string, host: string, port: number): boolea
     const bracketedHost = pattern.slice(1, closingBracket);
     const portText = pattern.slice(closingBracket + 2);
     if (!isDecimal(portText)) return false;
-    return normalizeHost(bracketedHost) === normalizedHost && Number(portText) === port;
+    return globMatches(normalizeHost(bracketedHost), normalizedHost) && Number(portText) === port;
   }
 
-  return normalizeHost(pattern) === normalizedHost && port === 22;
+  return globMatches(normalizeHost(pattern), normalizedHost) && port === 22;
+}
+
+function entryMatchesHost(entry: KnownHostEntry, host: string, port: number): boolean {
+  let positiveMatch = false;
+
+  for (const rawPattern of entry.hostPatterns) {
+    const negated = rawPattern.startsWith('!');
+    const pattern = negated ? rawPattern.slice(1) : rawPattern;
+    if (!pattern) continue;
+
+    const matches = hostPatternMatches(pattern, host, port);
+    if (negated && matches) return false;
+    if (!negated && matches) positiveMatch = true;
+  }
+
+  return positiveMatch;
 }
 
 export class KnownHostsVerifier {
@@ -126,22 +171,16 @@ export class KnownHostsVerifier {
       throw new Error(`Cannot verify SSH host key for ${host}:${port}: invalid host key`);
     }
 
-    const matchingEntries = this.entries.filter((entry) =>
-      entry.hostPatterns.some((pattern) => hostPatternMatches(pattern, host, port))
-    );
+    const matchingEntries = this.entries.filter((entry) => entryMatchesHost(entry, host, port));
     const revoked = matchingEntries.find((entry) => entry.marker === '@revoked');
     if (revoked) {
-      throw new Error(
-        `SSH host key for ${host}:${port} is revoked; possible MITM attack.`
-      );
+      throw new Error(`SSH host key for ${host}:${port} is revoked; possible MITM attack.`);
     }
 
     if (matchingEntries.some((entry) => safeEqual(entry.key, key))) return;
 
     if (matchingEntries.length > 0) {
-      throw new Error(
-        `SSH host key mismatch for ${host}:${port}; possible MITM attack.`
-      );
+      throw new Error(`SSH host key mismatch for ${host}:${port}; possible MITM attack.`);
     }
 
     throw new Error(

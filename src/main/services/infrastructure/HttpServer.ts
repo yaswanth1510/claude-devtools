@@ -18,11 +18,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { existsSync } from 'fs';
 import { join } from 'path';
 
-import {
-  getBearerTokens,
-  isValidBearerToken,
-  isValidHostHeader,
-} from './HttpServerSecurity';
+import { getBearerTokens, isValidBearerToken, isValidHostHeader } from './HttpServerSecurity';
 
 const logger = createLogger('Service:HttpServer');
 
@@ -53,7 +49,7 @@ export class HttpServer {
     });
 
     this.app.addHook('onRequest', async (request, reply) => {
-      if (!request.url.startsWith('/api/')) return;
+      if (request.method === 'OPTIONS' || !request.url.startsWith('/api/')) return;
 
       const providedTokens = getBearerTokens(request.headers.authorization, request.url);
       if (!this.token || !providedTokens.some((token) => isValidBearerToken(token, this.token!))) {

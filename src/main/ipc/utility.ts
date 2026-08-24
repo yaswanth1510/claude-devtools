@@ -13,14 +13,11 @@ import { app, type IpcMain, type IpcMainInvokeEvent, shell } from 'electron';
 import * as fs from 'fs';
 
 import { type ClaudeMdFileInfo, readAllClaudeMdFiles, readDirectoryClaudeMd } from '../services';
+import { isAllowedExternalProtocol } from '../utils/externalUrl';
+import { validateDirectoryPath, validateFilePath, validateOpenPath } from '../utils/pathValidation';
+import { countTokens } from '../utils/tokenizer';
 
 const logger = createLogger('IPC:utility');
-import {
-  validateDirectoryPath,
-  validateFilePath,
-  validateOpenPath,
-} from '../utils/pathValidation';
-import { countTokens } from '../utils/tokenizer';
 
 /**
  * Registers all utility-related IPC handlers.
@@ -79,7 +76,7 @@ async function handleShellOpenExternal(
     }
 
     const protocol = parsedUrl.protocol.toLowerCase();
-    if (protocol !== 'http:' && protocol !== 'https:' && protocol !== 'mailto:') {
+    if (!isAllowedExternalProtocol(protocol)) {
       logger.error(`shell:openExternal - invalid URL scheme: ${url}`);
       return { success: false, error: 'Only http, https, and mailto URLs are allowed' };
     }
