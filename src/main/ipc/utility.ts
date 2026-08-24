@@ -15,7 +15,11 @@ import * as fs from 'fs';
 import { type ClaudeMdFileInfo, readAllClaudeMdFiles, readDirectoryClaudeMd } from '../services';
 
 const logger = createLogger('IPC:utility');
-import { validateFilePath, validateOpenPath } from '../utils/pathValidation';
+import {
+  validateDirectoryPath,
+  validateFilePath,
+  validateOpenPath,
+} from '../utils/pathValidation';
 import { countTokens } from '../utils/tokenizer';
 
 /**
@@ -137,7 +141,14 @@ async function handleReadClaudeMdFiles(
   projectRoot: string
 ): Promise<Record<string, ClaudeMdFileInfo>> {
   try {
-    const result = await readAllClaudeMdFiles(projectRoot);
+    const validation = validateDirectoryPath(projectRoot);
+    if (!validation.valid) {
+      logger.error(
+        `Rejected projectRoot in read-claude-md-files: ${validation.error ?? 'invalid path'}`
+      );
+      return {};
+    }
+    const result = await readAllClaudeMdFiles(validation.normalizedPath!);
     // Convert Map to object for IPC serialization
     const files: Record<string, ClaudeMdFileInfo> = {};
     result.files.forEach((info, key) => {
@@ -160,7 +171,19 @@ async function handleReadDirectoryClaudeMd(
   dirPath: string
 ): Promise<ClaudeMdFileInfo> {
   try {
-    const info = await readDirectoryClaudeMd(dirPath);
+    const validation = validateDirectoryPath(dirPath);
+    if (!validation.valid) {
+      logger.error(
+        `Rejected dirPath in read-directory-claude-md: ${validation.error ?? 'invalid path'}`
+      );
+      return {
+        path: dirPath,
+        exists: false,
+        charCount: 0,
+        estimatedTokens: 0,
+      };
+    }
+    const info = await readDirectoryClaudeMd(validation.normalizedPath!);
     return info;
   } catch (error) {
     logger.error(`Error in read-directory-claude-md:`, error);

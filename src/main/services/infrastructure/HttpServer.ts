@@ -11,10 +11,18 @@ import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import { type HttpServices, registerHttpRoutes } from '@main/http';
 import { broadcastEvent } from '@main/http/events';
+import { DEV_SERVER_PORT } from '@shared/constants';
 import { createLogger } from '@shared/utils/logger';
+import { randomBytes } from 'crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { existsSync } from 'fs';
 import { join } from 'path';
+
+import {
+  getBearerTokens,
+  isValidBearerToken,
+  isValidHostHeader,
+} from './HttpServerSecurity';
 
 const logger = createLogger('Service:HttpServer');
 
@@ -22,6 +30,7 @@ export class HttpServer {
   private app: FastifyInstance | null = null;
   private port: number = 3456;
   private running: boolean = false;
+  private token: string | null = null;
 
   /**
    * Start the HTTP server.
@@ -34,19 +43,41 @@ export class HttpServer {
     sshModeSwitchCallback: (mode: 'local' | 'ssh') => Promise<void>,
     preferredPort: number = 3456
   ): Promise<number> {
+    this.token = randomBytes(32).toString('hex');
     this.app = Fastify({ logger: false });
 
-    // Register CORS - allow all localhost origins
-    const localhostPattern = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/;
+    this.app.addHook('onRequest', async (request, reply) => {
+      if (!isValidHostHeader(request.headers.host, this.port)) {
+        return reply.status(403).send({ error: 'Invalid Host header' });
+      }
+    });
+
+    this.app.addHook('onRequest', async (request, reply) => {
+      if (!request.url.startsWith('/api/')) return;
+
+      const providedTokens = getBearerTokens(request.headers.authorization, request.url);
+      if (!this.token || !providedTokens.some((token) => isValidBearerToken(token, this.token!))) {
+        return reply.status(401).send({ error: 'Unauthorized' });
+      }
+    });
+
     await this.app.register(cors, {
       origin: (origin, cb) => {
-        // Allow requests with no origin (same-origin, curl, etc.)
         if (!origin) {
           cb(null, true);
           return;
         }
-        // Allow any localhost origin
-        if (localhostPattern.test(origin)) {
+
+        const allowedOrigins = new Set([
+          `http://127.0.0.1:${this.port}`,
+          `http://localhost:${this.port}`,
+        ]);
+        if (process.env.NODE_ENV === 'development') {
+          allowedOrigins.add(`http://localhost:${DEV_SERVER_PORT}`);
+          allowedOrigins.add(`http://127.0.0.1:${DEV_SERVER_PORT}`);
+        }
+
+        if (allowedOrigins.has(origin)) {
           cb(null, true);
           return;
         }
@@ -116,6 +147,7 @@ export class HttpServer {
       this.app = null;
       logger.info('HTTP server stopped');
     }
+    this.token = null;
   }
 
   /**
@@ -130,6 +162,10 @@ export class HttpServer {
    */
   getPort(): number {
     return this.port;
+  }
+
+  getToken(): string | null {
+    return this.token;
   }
 
   /**

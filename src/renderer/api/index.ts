@@ -18,7 +18,14 @@ import type { ElectronAPI } from '@shared/types/api';
 
 function getHttpPort(): number {
   const params = new URLSearchParams(window.location.search);
-  return parseInt(params.get('port') ?? '3456', 10);
+  const queryPort = params.get('port');
+  if (queryPort) return parseInt(queryPort, 10);
+  if (window.location.port) return parseInt(window.location.port, 10);
+  return 3456;
+}
+
+function getHttpToken(): string | undefined {
+  return new URLSearchParams(window.location.search).get('token') ?? undefined;
 }
 
 let httpClient: HttpAPIClient | null = null;
@@ -28,7 +35,7 @@ function getImpl(): ElectronAPI {
   // Lazily create the HTTP client only when actually needed (browser mode).
   // Caching avoids creating multiple EventSource connections.
   if (!httpClient) {
-    httpClient = new HttpAPIClient(getHttpPort());
+    httpClient = new HttpAPIClient(getHttpPort(), getHttpToken());
   }
   return httpClient;
 }

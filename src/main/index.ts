@@ -218,12 +218,18 @@ function initializeServices(): void {
   ipcMain.handle(HTTP_SERVER_START, async () => {
     try {
       if (httpServer.isRunning()) {
-        return { success: true, data: { running: true, port: httpServer.getPort() } };
+        return {
+          success: true,
+          data: { running: true, port: httpServer.getPort(), token: httpServer.getToken() },
+        };
       }
       await startHttpServer(handleModeSwitch);
       // Persist the enabled state
       configManager.updateConfig('httpServer', { enabled: true, port: httpServer.getPort() });
-      return { success: true, data: { running: true, port: httpServer.getPort() } };
+      return {
+        success: true,
+        data: { running: true, port: httpServer.getPort(), token: httpServer.getToken() },
+      };
     } catch (error) {
       logger.error('Failed to start HTTP server via IPC:', error);
       return {
@@ -238,7 +244,10 @@ function initializeServices(): void {
       await httpServer.stop();
       // Persist the disabled state
       configManager.updateConfig('httpServer', { enabled: false });
-      return { success: true, data: { running: false, port: httpServer.getPort() } };
+      return {
+        success: true,
+        data: { running: false, port: httpServer.getPort(), token: httpServer.getToken() },
+      };
     } catch (error) {
       logger.error('Failed to stop HTTP server via IPC:', error);
       return {
@@ -249,7 +258,11 @@ function initializeServices(): void {
   });
 
   ipcMain.handle(HTTP_SERVER_GET_STATUS, () => {
-    return { running: httpServer.isRunning(), port: httpServer.getPort() };
+    return {
+      running: httpServer.isRunning(),
+      port: httpServer.getPort(),
+      token: httpServer.getToken(),
+    };
   });
 
   // Forward SSH state changes to renderer and HTTP SSE clients

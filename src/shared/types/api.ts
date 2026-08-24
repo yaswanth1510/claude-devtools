@@ -253,6 +253,7 @@ export interface SshAPI {
 export interface HttpServerStatus {
   running: boolean;
   port: number;
+  token: string | null;
 }
 
 /**

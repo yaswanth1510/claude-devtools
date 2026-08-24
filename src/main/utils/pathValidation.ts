@@ -161,7 +161,10 @@ export function validateFilePath(
   const normalizedPath = path.resolve(normalizedInput);
 
   // Check against sensitive patterns
-  if (matchesSensitivePattern(normalizedPath)) {
+  if (
+    matchesSensitivePattern(normalizedPath) ||
+    matchesSensitivePattern(normalizedPath + path.sep)
+  ) {
     return { valid: false, error: 'Access to sensitive files is not allowed' };
   }
 
@@ -192,6 +195,43 @@ export function validateFilePath(
         error: 'Path is outside allowed directories (project or ~/.claude)',
       };
     }
+  }
+
+  return { valid: true, normalizedPath };
+}
+
+/**
+ * Validates a caller-supplied directory used to locate a CLAUDE.md file.
+ * Unlike file paths, project roots are not known in advance, so this validates
+ * absolute path syntax, sensitive locations, and existing symlink targets.
+ */
+export function validateDirectoryPath(directoryPath: string): PathValidationResult {
+  if (!directoryPath || typeof directoryPath !== 'string') {
+    return { valid: false, error: 'Invalid directory path' };
+  }
+
+  const expandedPath = directoryPath.startsWith('~')
+    ? path.join(os.homedir(), directoryPath.slice(1))
+    : directoryPath;
+  const normalizedInput = path.normalize(expandedPath);
+
+  if (!path.isAbsolute(normalizedInput)) {
+    return { valid: false, error: 'Path must be absolute' };
+  }
+  const normalizedPath = path.resolve(normalizedInput);
+  if (
+    matchesSensitivePattern(normalizedPath) ||
+    matchesSensitivePattern(normalizedPath + path.sep)
+  ) {
+    return { valid: false, error: 'Access to sensitive files is not allowed' };
+  }
+
+  const realPath = resolveRealPathIfExists(normalizedPath);
+  if (
+    realPath &&
+    (matchesSensitivePattern(realPath) || matchesSensitivePattern(realPath + path.sep))
+  ) {
+    return { valid: false, error: 'Access to sensitive files is not allowed' };
   }
 
   return { valid: true, normalizedPath };

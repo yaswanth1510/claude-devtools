@@ -35,6 +35,7 @@ export const GeneralSection = ({
   const [serverStatus, setServerStatus] = useState<HttpServerStatus>({
     running: false,
     port: 3456,
+    token: null,
   });
   const [serverLoading, setServerLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -56,7 +57,9 @@ export const GeneralSection = ({
     }
   }, []);
 
-  const serverUrl = `http://localhost:${serverStatus.port}`;
+  const serverUrl = `http://127.0.0.1:${serverStatus.port}${
+    serverStatus.token ? `/?token=${encodeURIComponent(serverStatus.token)}` : ''
+  }`;
 
   const handleCopyUrl = useCallback(() => {
     void navigator.clipboard.writeText(serverUrl);
