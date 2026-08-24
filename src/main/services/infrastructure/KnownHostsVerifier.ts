@@ -56,6 +56,10 @@ function formatHostWithPort(host: string, port: number): string {
   return host.includes(':') ? `[${normalizeHost(host)}]:${port}` : `${normalizeHost(host)}:${port}`;
 }
 
+function isDecimal(value: string): boolean {
+  return value.length > 0 && [...value].every((character) => character >= '0' && character <= '9');
+}
+
 function safeEqual(left: Buffer, right: Buffer): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
 }
@@ -83,11 +87,13 @@ function hostPatternMatches(pattern: string, host: string, port: number): boolea
     ]);
   }
 
-  const bracketed = /^\[([^\]]+)\]:(\d+)$/.exec(pattern);
-  if (bracketed) {
-    return (
-      normalizeHost(bracketed[1]) === normalizedHost && Number(bracketed[2]) === port
-    );
+  if (pattern.startsWith('[')) {
+    const closingBracket = pattern.indexOf(']');
+    if (closingBracket < 2 || pattern[closingBracket + 1] !== ':') return false;
+    const bracketedHost = pattern.slice(1, closingBracket);
+    const portText = pattern.slice(closingBracket + 2);
+    if (!isDecimal(portText)) return false;
+    return normalizeHost(bracketedHost) === normalizedHost && Number(portText) === port;
   }
 
   return normalizeHost(pattern) === normalizedHost && port === 22;
