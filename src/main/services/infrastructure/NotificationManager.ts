@@ -279,8 +279,13 @@ export class NotificationManager extends EventEmitter {
       if (Date.now() < config.notifications.snoozedUntil) {
         return false;
       } else {
-        // Snooze has expired, clear it
-        this.configManager.clearSnooze();
+        // Snooze has expired, clear it. A failed config write must not block the
+        // notification itself, so the persistence error is logged only.
+        try {
+          this.configManager.clearSnooze();
+        } catch (error) {
+          logger.error('Failed to persist expired snooze reset:', error);
+        }
       }
     }
 

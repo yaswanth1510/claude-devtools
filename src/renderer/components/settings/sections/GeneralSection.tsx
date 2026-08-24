@@ -5,12 +5,16 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { api } from '@renderer/api';
+import { getErrorMessage } from '@shared/utils/errorHandling';
+import { createLogger } from '@shared/utils/logger';
 import { Check, Copy, Loader2 } from 'lucide-react';
 
 import { SettingRow, SettingsSectionHeader, SettingsSelect, SettingsToggle } from '../components';
 
 import type { SafeConfig } from '../hooks/useSettingsConfig';
 import type { HttpServerStatus } from '@shared/types/api';
+
+const logger = createLogger('Component:GeneralSection');
 
 // Theme options
 const THEME_OPTIONS = [
@@ -37,20 +41,34 @@ export const GeneralSection = ({
     port: 3456,
   });
   const [serverLoading, setServerLoading] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   // Fetch server status on mount
   useEffect(() => {
-    void api.httpServer.getStatus().then(setServerStatus);
+    void api.httpServer
+      .getStatus()
+      .then((status) => {
+        setServerStatus(status);
+        setServerError(null);
+      })
+      .catch((error: unknown) => {
+        logger.error('Failed to read HTTP server status:', error);
+        setServerError(`Could not read server status: ${getErrorMessage(error)}`);
+      });
   }, []);
 
   const handleServerToggle = useCallback(async (enabled: boolean) => {
     setServerLoading(true);
+    setServerError(null);
     try {
       const status = enabled ? await api.httpServer.start() : await api.httpServer.stop();
       setServerStatus(status);
-    } catch {
-      // Status didn't change
+    } catch (error) {
+      logger.error(`Failed to ${enabled ? 'start' : 'stop'} HTTP server:`, error);
+      setServerError(
+        `Could not ${enabled ? 'start' : 'stop'} the server: ${getErrorMessage(error)}`
+      );
     } finally {
       setServerLoading(false);
     }
@@ -58,10 +76,15 @@ export const GeneralSection = ({
 
   const serverUrl = `http://localhost:${serverStatus.port}`;
 
-  const handleCopyUrl = useCallback(() => {
-    void navigator.clipboard.writeText(serverUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopyUrl = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(serverUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      logger.error('Failed to copy server URL:', error);
+      setServerError(`Could not copy the URL: ${getErrorMessage(error)}`);
+    }
   }, [serverUrl]);
 
   return (
@@ -130,7 +153,7 @@ export const GeneralSection = ({
             {serverUrl}
           </code>
           <button
-            onClick={handleCopyUrl}
+            onClick={() => void handleCopyUrl()}
             className="ml-auto flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-white/5"
             style={{
               borderColor: 'var(--color-border)',
@@ -140,6 +163,20 @@ export const GeneralSection = ({
             {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
             {copied ? 'Copied' : 'Copy URL'}
           </button>
+        </div>
+      )}
+
+      {serverError !== null && (
+        <div
+          className="mb-2 rounded-md px-3 py-2.5 text-xs"
+          style={{
+            backgroundColor: 'var(--tool-result-error-bg)',
+            border: '1px solid var(--tool-result-error-border)',
+            color: 'var(--tool-result-error-text)',
+          }}
+          role="alert"
+        >
+          {serverError}
         </div>
       )}
     </div>

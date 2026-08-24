@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 
-import { Check, Copy } from 'lucide-react';
+import { createLogger } from '@shared/utils/logger';
+import { Check, Copy, X } from 'lucide-react';
+
+const logger = createLogger('Component:CopyButton');
 
 interface CopyButtonProps {
   /** Text to copy to clipboard */
@@ -27,29 +30,37 @@ export const CopyButton: React.FC<CopyButtonProps> = ({
   inline = false,
 }) => {
   const [isCopied, setIsCopied] = useState(false);
+  const [hasFailed, setHasFailed] = useState(false);
 
   const handleCopy = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(text);
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
-    } catch {
-      // Silently fail — clipboard API may be unavailable
+    } catch (error) {
+      // The clipboard API may be unavailable or permission-denied; surface it
+      // on the button instead of pretending the copy succeeded.
+      logger.error('Clipboard write failed:', error);
+      setHasFailed(true);
+      setTimeout(() => setHasFailed(false), 2000);
     }
   };
 
-  const icon = isCopied ? (
-    <Check className="size-3.5" style={{ color: 'var(--badge-success-bg)' }} />
-  ) : (
-    <Copy className="size-3.5" style={{ color: 'var(--color-text-muted)' }} />
-  );
+  const title = hasFailed ? 'Copy failed' : 'Copy to clipboard';
+
+  let icon = <Copy className="size-3.5" style={{ color: 'var(--color-text-muted)' }} />;
+  if (isCopied) {
+    icon = <Check className="size-3.5" style={{ color: 'var(--badge-success-bg)' }} />;
+  } else if (hasFailed) {
+    icon = <X className="size-3.5" style={{ color: 'var(--badge-error-bg)' }} />;
+  }
 
   if (inline) {
     return (
       <button
         onClick={handleCopy}
         className="rounded p-1 transition-colors hover:opacity-80"
-        title="Copy to clipboard"
+        title={title}
       >
         {icon}
       </button>
@@ -65,11 +76,7 @@ export const CopyButton: React.FC<CopyButtonProps> = ({
       />
       {/* Solid background holding the button */}
       <div className="rounded-bl-lg p-1.5" style={{ backgroundColor: bgColor }}>
-        <button
-          onClick={handleCopy}
-          className="pointer-events-auto rounded p-1.5"
-          title="Copy to clipboard"
-        >
+        <button onClick={handleCopy} className="pointer-events-auto rounded p-1.5" title={title}>
           {icon}
         </button>
       </div>

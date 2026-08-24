@@ -7,9 +7,13 @@
  * - Save configuration changes to disk
  * - Manage notification settings (ignore patterns, projects, snooze)
  * - Handle JSON parse errors gracefully
+ *
+ * Mutating methods propagate persistence failures to the caller so that IPC/HTTP
+ * handlers can report them instead of silently reporting success.
  */
 
 import { validateRegexPattern } from '@main/utils/regexValidation';
+import { wrapError } from '@shared/utils/errorHandling';
 import { createLogger } from '@shared/utils/logger';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -330,6 +334,7 @@ export class ConfigManager {
 
   /**
    * Saves the current configuration to disk.
+   * @throws Error if the config file cannot be written
    */
   private saveConfig(): void {
     try {
@@ -337,6 +342,19 @@ export class ConfigManager {
       logger.info('Config saved');
     } catch (error) {
       logger.error('Error saving config:', error);
+      throw wrapError(`Failed to save config to ${this.configPath}`, error);
+    }
+  }
+
+  /**
+   * Saves the configuration without propagating write failures.
+   * Only for background paths where no caller can surface the error.
+   */
+  private saveConfigBestEffort(): void {
+    try {
+      this.saveConfig();
+    } catch (error) {
+      logger.error('Config save failed (best-effort path):', error);
     }
   }
 
@@ -446,6 +464,7 @@ export class ConfigManager {
    * Validates pattern for safety to prevent ReDoS attacks.
    * @param pattern - Regex pattern string to add
    * @returns Updated config
+   * @throws Error if the pattern is invalid or unsafe, or if the config cannot be saved
    */
   addIgnoreRegex(pattern: string): AppConfig {
     if (!pattern || pattern.trim().length === 0) {
@@ -457,8 +476,7 @@ export class ConfigManager {
     // Validate regex pattern (includes ReDoS protection)
     const validation = validateRegexPattern(trimmedPattern);
     if (!validation.valid) {
-      logger.error(`ConfigManager: Invalid regex pattern: ${validation.error ?? 'Unknown error'}`);
-      return this.getConfig();
+      throw new Error(`Invalid regex pattern: ${validation.error ?? 'Unknown error'}`);
     }
 
     // Check for duplicates
@@ -633,9 +651,10 @@ export class ConfigManager {
 
     // Check if snooze has expired
     if (Date.now() >= snoozedUntil) {
-      // Auto-clear expired snooze
+      // Auto-clear expired snooze. Called from the notification pipeline, where a
+      // write failure must not abort notification delivery.
       this.config.notifications.snoozedUntil = null;
-      this.saveConfig();
+      this.saveConfigBestEffort();
       return false;
     }
 
